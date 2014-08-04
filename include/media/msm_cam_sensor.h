@@ -1,4 +1,4 @@
-#ifdef CONFIG_SEC_H_PROJECT
+#if defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_JS_PROJECT)
 #include <media/msm_cam_sensor_h.h>
 #else
 

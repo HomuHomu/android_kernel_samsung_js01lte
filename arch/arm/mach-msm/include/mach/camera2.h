@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  */
-#ifdef CONFIG_SEC_H_PROJECT
+#if defined(CONFIG_SEC_H_PROJECT) || defined(CONFIG_SEC_JS_PROJECT)
 #include <mach/camera2_h.h>
 #else
 
