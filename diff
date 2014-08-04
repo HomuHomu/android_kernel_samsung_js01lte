@@ -1,0 +1,5301 @@
+diff --cc drivers/Kconfig
+index 715845b,aba8e36..0000000
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+diff --cc drivers/Makefile
+index b2a4815,8553baa..0000000
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+diff --cc drivers/base/Kconfig
+index 0b92897,4c8a298..0000000
+--- a/drivers/base/Kconfig
++++ b/drivers/base/Kconfig
+@@@ -276,7 -276,7 +276,11 @@@ config CMA_SIZE_PERCENTAG
+  
+  choice
+  	prompt "Selected region size"
+++<<<<<<< HEAD
+ +	default CMA_SIZE_SEL_ABSOLUTE
+++=======
++ 	default CMA_SIZE_SEL_MBYTES
+++>>>>>>> FETCH_HEAD
+  
+  config CMA_SIZE_SEL_MBYTES
+  	bool "Use mega bytes value only"
+@@@ -312,13 -312,26 +316,34 @@@ config CMA_ALIGNMEN
+  
+  config CMA_AREAS
+  	int "Maximum count of the CMA device-private areas"
+++<<<<<<< HEAD
+ +	default 7
+++=======
++ 	default 15
+++>>>>>>> FETCH_HEAD
+  	help
+  	  CMA allows to create CMA areas for particular devices. This parameter
+  	  sets the maximum number of such device private CMA areas in the
+  	  system.
+  
+++<<<<<<< HEAD
+ +	  If unsure, leave the default value "7".
+++=======
++ 	  If unsure, leave the default value "15".
++ 
++ config CMA_RESERVE_DEFAULT_AREA
++ 	bool "Permanently reserve the default area"
++ 	help
++ 	  By default, contiguous regions are given back to the page allocator so
++ 	  the memory may be used when not in contiguous forms. This has better
++ 	  utilization but the allocation time may be slower. Say Y here to
++ 	  never have the default region be returned to the page allocator.
++ 	  This means the memory will always be available for contiguous
++ 	  allocations but the pages will never be available for anything else
++ 	  except contiguous allocations.
++ 
++ 	  If unsure, say n.
+++>>>>>>> FETCH_HEAD
+  
+  endif
+  
+diff --cc drivers/base/Makefile
+index 7a0d23b,ea2004b..0000000
+--- a/drivers/base/Makefile
++++ b/drivers/base/Makefile
+@@@ -6,7 -6,7 +6,11 @@@ obj-y			:= core.o bus.o dd.o syscore.o 
+  			   attribute_container.o transport_class.o \
+  			   topology.o sys.o
+  obj-$(CONFIG_DEVTMPFS)	+= devtmpfs.o
+++<<<<<<< HEAD
+ +obj-$(CONFIG_CMA) += dma-contiguous.o
+++=======
++ obj-$(CONFIG_CMA) += dma-contiguous.o dma-removed.o
+++>>>>>>> FETCH_HEAD
+  obj-y			+= power/
+  obj-$(CONFIG_HAS_DMA)	+= dma-mapping.o
+  obj-$(CONFIG_HAVE_GENERIC_DMA_COHERENT) += dma-coherent.o
+diff --cc drivers/base/dma-contiguous.c
+index 45c9023,35d5048..0000000
+--- a/drivers/base/dma-contiguous.c
++++ b/drivers/base/dma-contiguous.c
+@@@ -37,6 -37,7 +37,10 @@@
+  #include <linux/swap.h>
+  #include <linux/mm_types.h>
+  #include <linux/dma-contiguous.h>
+++<<<<<<< HEAD
+++=======
++ #include <linux/dma-removed.h>
+++>>>>>>> FETCH_HEAD
+  #include <trace/events/kmem.h>
+  
+  #ifndef SZ_1M
+@@@ -47,6 -48,8 +51,11 @@@ struct cma 
+  	unsigned long	base_pfn;
+  	unsigned long	count;
+  	unsigned long	*bitmap;
+++<<<<<<< HEAD
+++=======
++ 	bool in_system;
++ 	struct mutex lock;
+++>>>>>>> FETCH_HEAD
+  };
+  
+  static DEFINE_MUTEX(cma_mutex);
+@@@ -59,6 -62,7 +68,10 @@@ static struct cma_area 
+  	unsigned long size;
+  	struct cma *cma;
+  	const char *name;
+++<<<<<<< HEAD
+++=======
++ 	bool to_system;
+++>>>>>>> FETCH_HEAD
+  } cma_areas[MAX_CMA_AREAS];
+  static unsigned cma_area_count;
+  
+@@@ -98,6 -102,11 +111,14 @@@ static struct cma *cma_get_area_by_name
+  #define CMA_SIZE_MBYTES 0
+  #endif
+  
+++<<<<<<< HEAD
+++=======
++ #ifdef CONFIG_CMA_RESERVE_DEFAULT_AREA
++ #define CMA_RESERVE_AREA 1
++ #else
++ #define CMA_RESERVE_AREA 0
++ #endif
+++>>>>>>> FETCH_HEAD
+  /*
+   * Default global CMA area size can be defined in kernel's .config.
+   * This is usefull mainly for distro maintainers to create a kernel
+@@@ -169,7 -178,7 +190,11 @@@ static __init int cma_activate_area(uns
+  }
+  
+  static __init struct cma *cma_create_area(unsigned long base_pfn,
+++<<<<<<< HEAD
+ +				     unsigned long count)
+++=======
++ 				     unsigned long count, bool system)
+++>>>>>>> FETCH_HEAD
+  {
+  	int bitmap_size = BITS_TO_LONGS(count) * sizeof(long);
+  	struct cma *cma;
+@@@ -183,14 -192,18 +208,27 @@@
+  
+  	cma->base_pfn = base_pfn;
+  	cma->count = count;
+++<<<<<<< HEAD
+++=======
++ 	cma->in_system = system;
+++>>>>>>> FETCH_HEAD
+  	cma->bitmap = kzalloc(bitmap_size, GFP_KERNEL);
+  
+  	if (!cma->bitmap)
+  		goto no_mem;
+  
+++<<<<<<< HEAD
+ +	ret = cma_activate_area(base_pfn, count);
+ +	if (ret)
+ +		goto error;
+++=======
++ 	if (cma->in_system) {
++ 		ret = cma_activate_area(base_pfn, count);
++ 		if (ret)
++ 			goto error;
++ 	}
++ 	mutex_init(&cma->lock);
+++>>>>>>> FETCH_HEAD
+  
+  	pr_debug("%s: returned %p\n", __func__, (void *)cma);
+  	return cma;
+@@@ -212,22 -225,54 +250,73 @@@ int __init cma_fdt_scan(unsigned long n
+  	unsigned long len;
+  	__be32 *prop;
+  	char *name;
+++<<<<<<< HEAD
+ +
+ +	if (!of_get_flat_dt_prop(node, "linux,contiguous-region", NULL))
+ +		return 0;
+ +
+ +	prop = of_get_flat_dt_prop(node, "reg", &len);
+ +	if (!prop || (len != 2 * sizeof(unsigned long)))
+ +		return 0;
+ +
+ +	base = be32_to_cpu(prop[0]);
+ +	size = be32_to_cpu(prop[1]);
+ +
+ +	name = of_get_flat_dt_prop(node, "label", NULL);
+ +
+ +	pr_info("Found %s, memory base %lx, size %ld MiB\n", uname,
+ +		(unsigned long)base, (unsigned long)size / SZ_1M);
+ +	dma_contiguous_reserve_area(size, &base, MEMBLOCK_ALLOC_ANYWHERE, name);
+++=======
++ 	bool in_system;
++ 	unsigned long size_cells = dt_root_size_cells;
++ 	unsigned long addr_cells = dt_root_addr_cells;
++ 	bool remove;
++ 	phys_addr_t limit = MEMBLOCK_ALLOC_ANYWHERE;
++ 	char *status;
++ 
++ 	if (!of_get_flat_dt_prop(node, "linux,reserve-contiguous-region", NULL))
++ 		return 0;
++ 
++ 	status = of_get_flat_dt_prop(node, "status", NULL);
++ 	/*
++ 	 * Yes, we actually want strncmp here to check for a prefix
++ 	 * ok vs. okay
++ 	 */
++ 	if (status && (strncmp(status, "ok", 2) != 0))
++ 		return 0;
++ 
++ 	prop = of_get_flat_dt_prop(node, "#size-cells", NULL);
++ 	if (prop)
++ 		size_cells = be32_to_cpup(prop);
++ 
++ 	prop = of_get_flat_dt_prop(node, "#address-cells", NULL);
++ 	if (prop)
++ 		addr_cells = be32_to_cpup(prop);
++ 
++ 	prop = of_get_flat_dt_prop(node, "reg", &len);
++ 	if (!prop || depth != 2)
++ 		return 0;
++ 
++ 	base = dt_mem_next_cell(addr_cells, &prop);
++ 	size = dt_mem_next_cell(size_cells, &prop);
++ 
++ 	name = of_get_flat_dt_prop(node, "label", NULL);
++ 	in_system =
++ 		of_get_flat_dt_prop(node, "linux,reserve-region", NULL) ? 0 : 1;
++ 
++ 	prop = of_get_flat_dt_prop(node, "linux,memory-limit", NULL);
++ 	if (prop)
++ 		limit = be32_to_cpu(prop[0]);
++ 
++ 	remove =
++ 	     of_get_flat_dt_prop(node, "linux,remove-completely", NULL) ? 1 : 0;
++ 
++ 	pr_info("Found %s, memory base %pa, size %ld MiB, limit %pa\n", uname,
++ 			&base, (unsigned long)size / SZ_1M, &limit);
++ 	dma_contiguous_reserve_area(size, &base, limit, name,
++ 					in_system, remove);
+++>>>>>>> FETCH_HEAD
+  
+  	return 0;
+  }
+@@@ -247,7 -292,7 +336,11 @@@ void __init dma_contiguous_reserve(phys
+  {
+  	phys_addr_t sel_size = 0;
+  
+++<<<<<<< HEAD
+ +	pr_debug("%s(limit %08lx)\n", __func__, (unsigned long)limit);
+++=======
++ 	pr_debug("%s(limit %pa)\n", __func__, &limit);
+++>>>>>>> FETCH_HEAD
+  
+  	if (size_cmdline != -1) {
+  		sel_size = size_cmdline;
+@@@ -268,8 -313,8 +361,13 @@@
+  		pr_debug("%s: reserving %ld MiB for global area\n", __func__,
+  			 (unsigned long)sel_size / SZ_1M);
+  
+++<<<<<<< HEAD
+ +		if (dma_contiguous_reserve_area(sel_size, &base, limit, NULL)
+ +		    == 0)
+++=======
++ 		if (dma_contiguous_reserve_area(sel_size, &base, limit, NULL,
++ 		    CMA_RESERVE_AREA ? 0 : 1, false) == 0)
+++>>>>>>> FETCH_HEAD
+  			dma_contiguous_def_base = base;
+  	}
+  #ifdef CONFIG_OF
+@@@ -292,15 -337,16 +390,28 @@@
+   * devices.
+   */
+  int __init dma_contiguous_reserve_area(phys_addr_t size, phys_addr_t *res_base,
+++<<<<<<< HEAD
+ +				       phys_addr_t limit, const char *name)
+ +{
+ +	phys_addr_t base = *res_base;
+ +	phys_addr_t alignment;
+ +	int ret = 0;
+ +
+ +	pr_debug("%s(size %lx, base %08lx, limit %08lx)\n", __func__,
+ +		 (unsigned long)size, (unsigned long)base,
+ +		 (unsigned long)limit);
+++=======
++ 				       phys_addr_t limit, const char *name,
++ 				       bool to_system, bool remove)
++ {
++ 	phys_addr_t base = *res_base;
++ 	phys_addr_t alignment = PAGE_SIZE;
++ 	int ret = 0;
++ 
++ 	pr_debug("%s(size %lx, base %pa, limit %pa)\n", __func__,
++ 		 (unsigned long)size, &base,
++ 		 &limit);
+++>>>>>>> FETCH_HEAD
+  
+  	/* Sanity checks */
+  	if (cma_area_count == ARRAY_SIZE(cma_areas)) {
+@@@ -312,7 -358,8 +423,12 @@@
+  		return -EINVAL;
+  
+  	/* Sanitise input arguments */
+++<<<<<<< HEAD
+ +	alignment = PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order);
+++=======
++ 	if (!remove)
++ 		alignment = PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order);
+++>>>>>>> FETCH_HEAD
+  	base = ALIGN(base, alignment);
+  	size = ALIGN(size, alignment);
+  	limit &= ~(alignment - 1);
+@@@ -338,6 -385,15 +454,18 @@@
+  		}
+  	}
+  
+++<<<<<<< HEAD
+++=======
++ 	if (remove) {
++ 		if (!to_system) {
++ 			memblock_free(base, size);
++ 			memblock_remove(base, size);
++ 		} else {
++ 			WARN(1, "Removing is incompatible with staying in the system\n");
++ 		}
++ 	}
++ 
+++>>>>>>> FETCH_HEAD
+  	/*
+  	 * Each reserved area must be initialised later, when more kernel
+  	 * subsystems (like slab allocator) are available.
+@@@ -345,14 -401,16 +473,27 @@@
+  	cma_areas[cma_area_count].base = base;
+  	cma_areas[cma_area_count].size = size;
+  	cma_areas[cma_area_count].name = name;
+++<<<<<<< HEAD
+ +	cma_area_count++;
+ +	*res_base = base;
+ +
+ +	pr_info("CMA: reserved %ld MiB at %08lx\n", (unsigned long)size / SZ_1M,
+ +		(unsigned long)base);
+ +
+ +	/* Architecture specific contiguous memory fixup. */
+ +	dma_contiguous_early_fixup(base, size);
+++=======
++ 	cma_areas[cma_area_count].to_system = to_system;
++ 	cma_area_count++;
++ 	*res_base = base;
++ 
++ 	pr_info("CMA: reserved %ld MiB at %pa\n", (unsigned long)size / SZ_1M,
++ 		 &base);
++ 
++ 	/* Architecture specific contiguous memory fixup. */
++ 	if (!remove)
++ 		dma_contiguous_early_fixup(base, size);
+++>>>>>>> FETCH_HEAD
+  	return 0;
+  err:
+  	pr_err("CMA: failed to reserve %ld MiB\n", (unsigned long)size / SZ_1M);
+@@@ -402,6 -460,10 +543,13 @@@ static void cma_assign_device_from_dt(s
+  		return;
+  
+  	dev_set_cma_area(dev, cma);
+++<<<<<<< HEAD
+++=======
++ 
++ 	if (of_property_read_bool(node, "linux,remove-completely"))
++ 		set_dma_ops(dev, &removed_dma_ops);
++ 
+++>>>>>>> FETCH_HEAD
+  	pr_info("Assigned CMA region at %lx to %s device\n", (unsigned long)value, dev_name(dev));
+  }
+  
+@@@ -427,8 -489,9 +575,14 @@@ static int __init cma_init_reserved_are
+  	for (i = 0; i < cma_area_count; i++) {
+  		phys_addr_t base = PFN_DOWN(cma_areas[i].base);
+  		unsigned int count = cma_areas[i].size >> PAGE_SHIFT;
+++<<<<<<< HEAD
+ +
+ +		cma = cma_create_area(base, count);
+++=======
++ 		bool system = cma_areas[i].to_system;
++ 
++ 		cma = cma_create_area(base, count, system);
+++>>>>>>> FETCH_HEAD
+  		if (!IS_ERR(cma))
+  			cma_areas[i].cma = cma;
+  	}
+@@@ -447,6 -510,20 +601,23 @@@
+  }
+  core_initcall(cma_init_reserved_areas);
+  
+++<<<<<<< HEAD
+++=======
++ phys_addr_t cma_get_base(struct device *dev)
++ {
++ 	struct cma *cma = dev_get_cma_area(dev);
++ 
++ 	return cma->base_pfn << PAGE_SHIFT;
++ }
++ 
++ static void clear_cma_bitmap(struct cma *cma, unsigned long pfn, int count)
++ {
++ 	mutex_lock(&cma->lock);
++ 	bitmap_clear(cma->bitmap, pfn - cma->base_pfn, count);
++ 	mutex_unlock(&cma->lock);
++ }
++ 
+++>>>>>>> FETCH_HEAD
+  /**
+   * dma_alloc_from_contiguous() - allocate pages from contiguous area
+   * @dev:   Pointer to device for which the allocation is performed.
+@@@ -458,17 -535,16 +629,30 @@@
+   * global one. Requires architecture specific get_dev_cma_area() helper
+   * function.
+   */
+++<<<<<<< HEAD
+ +struct page *dma_alloc_from_contiguous(struct device *dev, int count,
+ +				       unsigned int align)
+ +{
+ +	unsigned long mask, pfn, pageno, start = 0;
+ +	struct cma *cma = dev_get_cma_area(dev);
+ +	struct page *page = NULL;
+ +	int ret;
+ +	int tries = 0;
+ +
+ +	if (!cma || !cma->count)
+ +		return NULL;
+++=======
++ unsigned long dma_alloc_from_contiguous(struct device *dev, int count,
++ 				       unsigned int align)
++ {
++ 	unsigned long mask, pfn = 0, pageno, start = 0;
++ 	struct cma *cma = dev_get_cma_area(dev);
++ 	int ret = 0;
++ 	int tries = 0;
++ 
++ 	if (!cma || !cma->count)
++ 		return 0;
+++>>>>>>> FETCH_HEAD
+  
+  	if (align > CONFIG_CMA_ALIGNMENT)
+  		align = CONFIG_CMA_ALIGNMENT;
+@@@ -477,27 -553,40 +661,64 @@@
+  		 count, align);
+  
+  	if (!count)
+++<<<<<<< HEAD
+ +		return NULL;
+ +
+ +	mask = (1 << align) - 1;
+ +
+ +	mutex_lock(&cma_mutex);
+ +
+ +	for (;;) {
+ +		pageno = bitmap_find_next_zero_area(cma->bitmap, cma->count,
+ +						    start, count, mask);
+ +		if (pageno >= cma->count)
+ +			break;
+ +
+ +		pfn = cma->base_pfn + pageno;
+ +		ret = alloc_contig_range(pfn, pfn + count, MIGRATE_CMA);
+ +		if (ret == 0) {
+ +			bitmap_set(cma->bitmap, pageno, count);
+ +			page = pfn_to_page(pfn);
+ +			break;
+ +		} else if (ret != -EBUSY) {
+ +			break;
+ +		}
+++=======
++ 		return 0;
++ 
++ 	mask = (1 << align) - 1;
++ 
++ 
++ 	for (;;) {
++ 		mutex_lock(&cma->lock);
++ 		pageno = bitmap_find_next_zero_area(cma->bitmap, cma->count,
++ 						    start, count, mask);
++ 		if (pageno >= cma->count) {
++ 			mutex_unlock(&cma->lock);
++ 			break;
++ 		}
++ 		bitmap_set(cma->bitmap, pageno, count);
++ 		/*
++ 		 * It's safe to drop the lock here. We've marked this region for
++ 		 * our exclusive use. If the migration fails we will take the
++ 		 * lock again and unmark it.
++ 		 */
++ 		mutex_unlock(&cma->lock);
++ 
++ 		pfn = cma->base_pfn + pageno;
++ 		if (cma->in_system) {
++ 			mutex_lock(&cma_mutex);
++ 			ret = alloc_contig_range(pfn, pfn + count, MIGRATE_CMA);
++ 			mutex_unlock(&cma_mutex);
++ 		}
++ 		if (ret == 0) {
++ 			break;
++ 		} else if (ret != -EBUSY) {
++ 			clear_cma_bitmap(cma, pfn, count);
++ 			break;
++ 		}
++ 		clear_cma_bitmap(cma, pfn, count);
+++>>>>>>> FETCH_HEAD
+  		tries++;
+  		trace_dma_alloc_contiguous_retry(tries);
+  
+@@@ -507,9 -596,8 +728,14 @@@
+  		start = pageno + mask + 1;
+  	}
+  
+++<<<<<<< HEAD
+ +	mutex_unlock(&cma_mutex);
+ +	pr_debug("%s(): returned %p\n", __func__, page);
+ +	return page;
+++=======
++ 	pr_debug("%s(): returned %lx\n", __func__, pfn);
++ 	return pfn;
+++>>>>>>> FETCH_HEAD
+  }
+  
+  /**
+@@@ -522,28 -610,24 +748,46 @@@
+   * It returns false when provided pages do not belong to contiguous area and
+   * true otherwise.
+   */
+++<<<<<<< HEAD
+ +bool dma_release_from_contiguous(struct device *dev, struct page *pages,
+ +				 int count)
+ +{
+ +	struct cma *cma = dev_get_cma_area(dev);
+ +	unsigned long pfn;
+ +
+ +	if (!cma || !pages)
+ +		return false;
+ +
+ +	pr_debug("%s(page %p)\n", __func__, (void *)pages);
+ +
+ +	pfn = page_to_pfn(pages);
+++=======
++ bool dma_release_from_contiguous(struct device *dev, unsigned long pfn,
++ 				 int count)
++ {
++ 	struct cma *cma = dev_get_cma_area(dev);
++ 
++ 	if (!cma || !pfn)
++ 		return false;
++ 
++ 	pr_debug("%s(pfn %lx)\n", __func__, pfn);
+++>>>>>>> FETCH_HEAD
+  
+  	if (pfn < cma->base_pfn || pfn >= cma->base_pfn + cma->count)
+  		return false;
+  
+  	VM_BUG_ON(pfn + count > cma->base_pfn + cma->count);
+  
+++<<<<<<< HEAD
+ +	mutex_lock(&cma_mutex);
+ +	bitmap_clear(cma->bitmap, pfn - cma->base_pfn, count);
+ +	free_contig_range(pfn, count);
+ +	mutex_unlock(&cma_mutex);
+++=======
++ 	if (cma->in_system)
++ 		free_contig_range(pfn, count);
++ 	clear_cma_bitmap(cma, pfn, count);
+++>>>>>>> FETCH_HEAD
+  
+  	return true;
+  }
+diff --cc drivers/base/dma-mapping.c
+index 6f3676f,0ce39a3..0000000
+--- a/drivers/base/dma-mapping.c
++++ b/drivers/base/dma-mapping.c
+@@@ -10,6 -10,7 +10,10 @@@
+  #include <linux/dma-mapping.h>
+  #include <linux/export.h>
+  #include <linux/gfp.h>
+++<<<<<<< HEAD
+++=======
++ #include <asm-generic/dma-coherent.h>
+++>>>>>>> FETCH_HEAD
+  
+  /*
+   * Managed DMA API
+@@@ -218,3 -219,51 +222,54 @@@ void dmam_release_declared_memory(struc
+  EXPORT_SYMBOL(dmam_release_declared_memory);
+  
+  #endif
+++<<<<<<< HEAD
+++=======
++ 
++ /*
++  * Create scatter-list for the already allocated DMA buffer.
++  */
++ int dma_common_get_sgtable(struct device *dev, struct sg_table *sgt,
++ 		 void *cpu_addr, dma_addr_t handle, size_t size)
++ {
++ 	struct page *page = virt_to_page(cpu_addr);
++ 	int ret;
++ 
++ 	ret = sg_alloc_table(sgt, 1, GFP_KERNEL);
++ 	if (unlikely(ret))
++ 		return ret;
++ 
++ 	sg_set_page(sgt->sgl, page, PAGE_ALIGN(size), 0);
++ 	return 0;
++ }
++ EXPORT_SYMBOL(dma_common_get_sgtable);
++ 
++ /*
++  * Create userspace mapping for the DMA-coherent memory.
++  */
++ int dma_common_mmap(struct device *dev, struct vm_area_struct *vma,
++ 		    void *cpu_addr, dma_addr_t dma_addr, size_t size)
++ {
++ 	int ret = -ENXIO;
++ #ifdef CONFIG_MMU
++ 	unsigned long user_count = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
++ 	unsigned long count = PAGE_ALIGN(size) >> PAGE_SHIFT;
++ 	unsigned long pfn = page_to_pfn(virt_to_page(cpu_addr));
++ 	unsigned long off = vma->vm_pgoff;
++ 
++ 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
++ 
++ 	if (dma_mmap_from_coherent(dev, vma, cpu_addr, size, &ret))
++ 		return ret;
++ 
++ 	if (off < count && user_count <= (count - off)) {
++ 		ret = remap_pfn_range(vma, vma->vm_start,
++ 				      pfn + off,
++ 				      user_count << PAGE_SHIFT,
++ 				      vma->vm_page_prot);
++ 	}
++ #endif	/* CONFIG_MMU */
++ 
++ 	return ret;
++ }
++ EXPORT_SYMBOL(dma_common_mmap);
+++>>>>>>> FETCH_HEAD
+diff --cc drivers/battery/sec_battery.c
+index e4aa97a,7ac5d41..0000000
+--- a/drivers/battery/sec_battery.c
++++ b/drivers/battery/sec_battery.c
+diff --cc drivers/bluetooth/bluesleep.c
+index 58e0a83,673bf1b..0000000
+--- a/drivers/bluetooth/bluesleep.c
++++ b/drivers/bluetooth/bluesleep.c
+@@@ -75,12 -75,10 +75,19 @@@
+  #define POLARITY_LOW 0
+  #define POLARITY_HIGH 1
+  
+++<<<<<<< HEAD
+ +enum msm_hs_clk_states_e {
+ +	MSM_HS_CLK_PORT_OFF,     /* port not in use */
+ +	MSM_HS_CLK_OFF,          /* clock disabled */
+ +	MSM_HS_CLK_REQUEST_OFF,  /* disable after TX and RX flushed */
+ +	MSM_HS_CLK_ON,           /* clock enabled */
+ +};
+++=======
++ /* enable/disable wake-on-bluetooth */
++ #define BT_ENABLE_IRQ_WAKE 1
++ 
++ #define BT_BLUEDROID_SUPPORT 1
+++>>>>>>> FETCH_HEAD
+  
+  struct bluesleep_info {
+  	unsigned host_wake;
+@@@ -94,18 -92,15 +101,27 @@@
+  
+  /* work function */
+  static void bluesleep_sleep_work(struct work_struct *work);
+++<<<<<<< HEAD
+ +static void bluesleep_uart_awake_work(struct work_struct *work);
+  
+  /* work queue */
+  DECLARE_DELAYED_WORK(sleep_workqueue, bluesleep_sleep_work);
+ +DECLARE_DELAYED_WORK(uart_awake_workqueue, bluesleep_uart_awake_work);
+++=======
+++
+++/* work queue */
+++DECLARE_DELAYED_WORK(sleep_workqueue, bluesleep_sleep_work);
+++>>>>>>> FETCH_HEAD
+  
+  /* Macros for handling sleep work */
+  #define bluesleep_rx_busy()     schedule_delayed_work(&sleep_workqueue, 0)
+  #define bluesleep_tx_busy()     schedule_delayed_work(&sleep_workqueue, 0)
+  #define bluesleep_rx_idle()     schedule_delayed_work(&sleep_workqueue, 0)
+  #define bluesleep_tx_idle()     schedule_delayed_work(&sleep_workqueue, 0)
+++<<<<<<< HEAD
+ +#define bluesleep_uart_work()     schedule_delayed_work(&uart_awake_workqueue, 0)
+++=======
+++>>>>>>> FETCH_HEAD
+  
+  /* 10 second timeout */
+  #define TX_TIMER_INTERVAL  3
+@@@ -117,7 -112,12 +133,16 @@@
+  #define BT_EXT_WAKE	0x08
+  #define BT_SUSPEND	0x10
+  
+++<<<<<<< HEAD
+ +static bool bt_enabled;
+++=======
++ #if BT_BLUEDROID_SUPPORT
++ static bool has_lpm_enabled;
++ #else
++ /* global pointer to a single hci device. */
++ static struct hci_dev *bluesleep_hdev;
++ #endif
+++>>>>>>> FETCH_HEAD
+  
+  static struct platform_device *bluesleep_uart_dev;
+  static struct bluesleep_info *bsi;
+@@@ -125,6 -125,10 +150,13 @@@
+  /*
+   * Local function prototypes
+   */
+++<<<<<<< HEAD
+++=======
++ #if !BT_BLUEDROID_SUPPORT
++ static int bluesleep_hci_event(struct notifier_block *this,
++ 			unsigned long event, void *data);
++ #endif
+++>>>>>>> FETCH_HEAD
+  
+  /*
+   * Global variables
+@@@ -142,43 -146,20 +174,58 @@@ static DEFINE_TIMER(tx_timer, bluesleep
+  /** Lock for state transitions */
+  struct mutex bluesleep_mutex;
+  
+++<<<<<<< HEAD
+++=======
++ #if !BT_BLUEDROID_SUPPORT
++ /** Notifier block for HCI events */
++ struct notifier_block hci_event_nblock = {
++ 	.notifier_call = bluesleep_hci_event,
++ };
++ #endif
++ 
+++>>>>>>> FETCH_HEAD
+  struct proc_dir_entry *bluetooth_dir, *sleep_dir;
+  
+  /*
+   * Local functions
+   */
+++<<<<<<< HEAD
+ +
+ +static int bluesleep_get_uart_state(void)
+ +{
+ +	int state = 0;
+ +
+ +	state = msm_hs_get_clock_state(bsi->uport);
+ +	return state;
+ +}
+ +
+ +static void bluesleep_uart_awake_work(struct work_struct *work)
+ +{
+ +	int clk_state;
+ +
+ +	if (!bsi->uport) {
+ +		BT_DBG("hsuart_power called. But uport is null");
+ +		return;
+ +	}
+ +
+ +	clk_state = bluesleep_get_uart_state();
+ +	if (clk_state == MSM_HS_CLK_OFF) {
+ +		BT_DBG("bluesleep_uart_awake_work : hsuart_power on");
+ +		msm_hs_request_clock_on(bsi->uport);
+ +		msm_hs_set_mctrl(bsi->uport, TIOCM_RTS);
+ +	}else if(clk_state == MSM_HS_CLK_REQUEST_OFF){
+ +		bluesleep_uart_work();
+ +	}
+ +}
+ +
+ +static void hsuart_power(int on)
+ +{
+ +	int clk_state;
+ +
+++=======
++ static void hsuart_power(int on)
++ {
+++>>>>>>> FETCH_HEAD
+  	if (test_bit(BT_SUSPEND, &flags) && !on) {
+  		BT_DBG("hsuart_power OFF- it's suspend state. so return.");
+  		return;
+@@@ -190,22 -171,9 +237,28 @@@
+  	}
+  
+  	if (on) {
+++<<<<<<< HEAD
+ +		if(test_bit(BT_TXDATA, &flags)) {
+ +			BT_DBG("hsuart_power on");
+ +			msm_hs_request_clock_on(bsi->uport);
+ +			msm_hs_set_mctrl(bsi->uport, TIOCM_RTS);
+ +			return;
+ +		}
+ +		
+ +		clk_state = bluesleep_get_uart_state();
+ +		if(clk_state == MSM_HS_CLK_REQUEST_OFF) {
+ +			BT_DBG("hsuart_power wait");
+ +			bluesleep_uart_work();
+ +		} else {
+ +			BT_DBG("hsuart_power on");
+ +			msm_hs_request_clock_on(bsi->uport);
+ +			msm_hs_set_mctrl(bsi->uport, TIOCM_RTS);
+ +		}
+++=======
++ 		BT_DBG("hsuart_power on");
++ 		msm_hs_request_clock_on(bsi->uport);
++ 		msm_hs_set_mctrl(bsi->uport, TIOCM_RTS);
+++>>>>>>> FETCH_HEAD
+  	} else {
+  		BT_DBG("hsuart_power off");
+  		msm_hs_set_mctrl(bsi->uport, 0);
+@@@ -238,10 -206,6 +291,13 @@@ void bluesleep_sleep_wakeup(void
+  		set_bit(BT_EXT_WAKE, &flags);
+  		clear_bit(BT_ASLEEP, &flags);
+  	}
+++<<<<<<< HEAD
+ +	else {
+ +		BT_DBG("bluesleep_sleep_wakeup : already wake up, so start timer...");
+ +		mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL * HZ));
+ +	}
+++=======
+++>>>>>>> FETCH_HEAD
+  }
+  
+  static void bluesleep_tx_data_wakeup(void)
+@@@ -258,10 -222,6 +314,13 @@@
+  		set_bit(BT_EXT_WAKE, &flags);
+  		clear_bit(BT_ASLEEP, &flags);
+  	}
+++<<<<<<< HEAD
+ +	else {
+ +		BT_DBG("bluesleep_tx_data_wakeup : already wake up, so start timer...");
+ +		mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL * HZ));
+ +	}
+++=======
+++>>>>>>> FETCH_HEAD
+  }
+  
+  
+@@@ -287,31 -247,18 +346,43 @@@ static void bluesleep_sleep_work(struc
+  		}
+  
+  		if (msm_hs_tx_empty(bsi->uport)) {
+++<<<<<<< HEAD
+ +			if (test_bit(BT_TXDATA, &flags)) {
+ +				BT_DBG("TXDATA remained. Wait until timer expires.");
+ +
+ +				mod_timer(&tx_timer, jiffies + TX_TIMER_INTERVAL * HZ);
+ +				mutex_unlock(&bluesleep_mutex);
+ +				return;
+ +			}
+ +
+++=======
+++>>>>>>> FETCH_HEAD
+  			BT_DBG("going to sleep...");
+  
+  			set_bit(BT_ASLEEP, &flags);
+  			/*Deactivating UART */
+  			hsuart_power(0);
+  
+++<<<<<<< HEAD
+ +			/* Moved from Timer expired */
+ +			if (bsi->has_ext_wake == 1)
+ +				gpio_set_value(bsi->ext_wake, 0);
+ +			clear_bit(BT_EXT_WAKE, &flags);
+ +
+ +			/*Deactivating UART */
+ +			/* UART clk is not turned off immediately. Release
+ +			* wakelock after 500 ms.
+ +			*/
+ +			wake_lock_timeout(&bsi->wake_lock, HZ / 2);
+ +			} else {
+++=======
++ 			/*Deactivating UART */
++ 			/* UART clk is not turned off immediately. Release
++ 			 * wakelock after 500 ms.
++ 			 */
++ 			wake_lock_timeout(&bsi->wake_lock, HZ / 2);
++ 		} else {
+++>>>>>>> FETCH_HEAD
+  			BT_DBG("host can enter sleep but some tx remained.");
+  
+  			mod_timer(&tx_timer, jiffies + TX_TIMER_INTERVAL * HZ);
+@@@ -320,7 -267,6 +391,10 @@@
+  		}
+  	} else if (!test_bit(BT_EXT_WAKE, &flags)
+  			&& !test_bit(BT_ASLEEP, &flags)) {
+++<<<<<<< HEAD
+ +		BT_DBG("host_wake high and BT_EXT_WAKE & BT_ASLEEP already freed.");
+++=======
+++>>>>>>> FETCH_HEAD
+  		mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL * HZ));
+  		if (bsi->has_ext_wake == 1) {
+  			gpio_set_value(bsi->ext_wake, 1);
+@@@ -362,19 -308,18 +436,34 @@@ static void bluesleep_outgoing_data(voi
+  
+  	BT_DBG("bluesleep_outgoing_data.");
+  
+++<<<<<<< HEAD
+ +	if (!test_bit(BT_EXT_WAKE, &flags))
+ +		BT_DBG("BT_EXT_WAKE freed");
+ +
+ +	if (!test_bit(BT_ASLEEP, &flags))
+ +		BT_DBG("BT_ASLEEP freed");
+ +
+ +	/*
+ +	** Uart Clk should be enabled promptly
+ +	** before bluedroid write TX data.
+ +	*/
+ +	hsuart_power(1);
+ +
+ +	bluesleep_tx_data_wakeup();
+++=======
++ 	/* if the tx side is sleeping... */
++ 	if (!test_bit(BT_EXT_WAKE, &flags)) {
++ 		BT_DBG("tx was sleeping");
++ 
++ 		/*
++ 		** Uart Clk should be enabled promptly
++ 		** before bluedroid write TX data.
++ 		*/
++ 		hsuart_power(1);
++ 
++ 		bluesleep_tx_data_wakeup();
++ 	}
+++>>>>>>> FETCH_HEAD
+  
+  	mutex_unlock(&bluesleep_mutex);
+  }
+@@@ -398,11 -343,13 +487,19 @@@ static void bluesleep_start(void
+  		gpio_set_value(bsi->ext_wake, 1);
+  	}
+  	set_bit(BT_EXT_WAKE, &flags);
+++<<<<<<< HEAD
+++=======
++ #if BT_ENABLE_IRQ_WAKE
+++>>>>>>> FETCH_HEAD
+  	retval = enable_irq_wake(bsi->host_wake_irq);
+  	if (retval < 0) {
+  		BT_ERR("Couldn't enable BT_HOST_WAKE as wakeup interrupt");
+  		goto fail;
+  	}
+++<<<<<<< HEAD
+++=======
++ #endif
+++>>>>>>> FETCH_HEAD
+  	set_bit(BT_PROTO, &flags);
+  	wake_lock(&bsi->wake_lock);
+  	return;
+@@@ -414,24 -361,25 +511,46 @@@ fail
+  
+  static void bluesleep_abnormal_stop(void)
+  {
+++<<<<<<< HEAD
+ +	BT_ERR("bluesleep_abnormal_stop");
+ +
+ +	if (!test_bit(BT_PROTO, &flags)) {
+ +		BT_ERR("(bluesleep_abnormal_stop) proto is not set. Failed to stop bluesleep");
+ +		bsi->uport = NULL;
+ +		return;
+ +	}
+ +
+ +	del_timer(&tx_timer);
+ +	clear_bit(BT_PROTO, &flags);
+ +
+ +	if (disable_irq_wake(bsi->host_wake_irq))
+ +		BT_ERR("Couldn't disable hostwake IRQ wakeup mode\n");
+ +
+ +	wake_lock_timeout(&bsi->wake_lock, HZ / 2);
+ +
+ +	clear_bit(BT_TXDATA, &flags);
+ +	bsi->uport = NULL;
+++=======
++     BT_ERR("bluesleep_abnormal_stop");
++ 
++     if (!test_bit(BT_PROTO, &flags)) {
++         BT_ERR("(bluesleep_abnormal_stop) proto is not set. Failed to stop bluesleep");
++         bsi->uport = NULL;
++         return;
++     }
++ 
++     del_timer(&tx_timer);
++     clear_bit(BT_PROTO, &flags);
++ 
++ #if BT_ENABLE_IRQ_WAKE
++     if (disable_irq_wake(bsi->host_wake_irq))
++         BT_ERR("Couldn't disable hostwake IRQ wakeup mode\n");
++ #endif
++     wake_lock_timeout(&bsi->wake_lock, HZ / 2);
++ 
++     clear_bit(BT_TXDATA, &flags);
++     bsi->uport = NULL;
+++>>>>>>> FETCH_HEAD
+  }
+  
+  /**
+@@@ -457,14 -405,16 +576,25 @@@ static void bluesleep_stop(void
+  		hsuart_power(1);
+  	}
+  
+++<<<<<<< HEAD
+ +	if (disable_irq_wake(bsi->host_wake_irq))
+ +		BT_ERR("Couldn't disable hostwake IRQ wakeup mode\n");
+ +
+++=======
++ #if BT_ENABLE_IRQ_WAKE
++ 	if (disable_irq_wake(bsi->host_wake_irq))
++ 		BT_ERR("Couldn't disable hostwake IRQ wakeup mode\n");
++ #endif
+++>>>>>>> FETCH_HEAD
+  	wake_lock_timeout(&bsi->wake_lock, HZ / 2);
+  
+  	bsi->uport = NULL;
+  }
+  
+++<<<<<<< HEAD
+++=======
++ #if BT_BLUEDROID_SUPPORT
+++>>>>>>> FETCH_HEAD
+  struct uart_port *bluesleep_get_uart_port(void)
+  {
+  	struct uart_port *uport = NULL;
+@@@ -477,8 -427,8 +607,13 @@@
+  static int bluesleep_read_proc_lpm(char *page, char **start, off_t offset,
+  					int count, int *eof, void *data)
+  {
+++<<<<<<< HEAD
+ +	*eof = 1;
+ +	return snprintf(page, count, "lpm: %u\n", bt_enabled?1:0 );
+++=======
++     *eof = 1;
++     return snprintf(page, count, "lpm: %u\n", has_lpm_enabled?1:0 );
+++>>>>>>> FETCH_HEAD
+  }
+  
+  static int bluesleep_write_proc_lpm(struct file *file, const char *buffer,
+@@@ -496,23 -446,23 +631,40 @@@
+  		BT_ERR("(bluesleep_write_proc_lpm) Unreg HCI notifier.");
+  		/* HCI_DEV_UNREG */
+  		bluesleep_stop();
+++<<<<<<< HEAD
+ +		bt_enabled = false;
+++=======
++ 		has_lpm_enabled = false;
+++>>>>>>> FETCH_HEAD
+  		//bsi->uport = NULL;
+  	} else if (b == '1') {
+  		BT_ERR("(bluesleep_write_proc_lpm) Reg HCI notifier.");
+  		/* HCI_DEV_REG */
+++<<<<<<< HEAD
+ +		if (!bt_enabled) {
+ +			bt_enabled = true;
+++=======
++ 		if (!has_lpm_enabled) {
++ 			has_lpm_enabled = true;
+++>>>>>>> FETCH_HEAD
+  			bsi->uport = bluesleep_get_uart_port();
+  			/* if bluetooth started, start bluesleep*/
+  			bluesleep_start();
+  		}
+  	} else if (b == '2') {
+++<<<<<<< HEAD
+ +		BT_ERR("(bluesleep_write_proc_lpm) don`t control ext_wake & uart clk");
+ +		if(bt_enabled) {
+ +			bt_enabled = false;
+ +			bluesleep_abnormal_stop();
+ +		}
+++=======
++         BT_ERR("(bluesleep_write_proc_lpm) don`t control ext_wake & uart clk");
++         if(has_lpm_enabled) {
++             has_lpm_enabled = false;
++             bluesleep_abnormal_stop();
++         }
+++>>>>>>> FETCH_HEAD
+  	}
+  
+  	return count;
+@@@ -542,6 -492,49 +694,52 @@@ static int bluesleep_write_proc_btwrite
+  
+  	return count;
+  }
+++<<<<<<< HEAD
+++=======
++ #else
++ /**
++  * Handles HCI device events.
++  * @param this Not used.
++  * @param event The event that occurred.
++  * @param data The HCI device associated with the event.
++  * @return <code>NOTIFY_DONE</code>.
++  */
++ static int bluesleep_hci_event(struct notifier_block *this,
++ 				unsigned long event, void *data)
++ {
++ 	struct hci_dev *hdev = (struct hci_dev *) data;
++ 	struct hci_uart *hu;
++ 	struct uart_state *state;
++ 
++ 	if (!hdev)
++ 		return NOTIFY_DONE;
++ 
++ 	switch (event) {
++ 	case HCI_DEV_REG:
++ 		if (!bluesleep_hdev) {
++ 			bluesleep_hdev = hdev;
++ 			hu  = (struct hci_uart *) hdev->driver_data;
++ 			state = (struct uart_state *) hu->tty->driver_data;
++ 			bsi->uport = state->uart_port;
++ 			/* if bluetooth started, start bluesleep*/
++ 			bluesleep_start();
++ 		}
++ 		break;
++ 	case HCI_DEV_UNREG:
++ 		bluesleep_stop();
++ 		bluesleep_hdev = NULL;
++ 		bsi->uport = NULL;
++ 		/* if bluetooth stopped, stop bluesleep also */
++ 		break;
++ 	case HCI_DEV_WRITE:
++ 		bluesleep_outgoing_data();
++ 		break;
++ 	}
++ 
++ 	return NOTIFY_DONE;
++ }
++ #endif
+++>>>>>>> FETCH_HEAD
+  
+  /**
+   * Handles transmission timer expiration.
+@@@ -552,7 -545,9 +750,13 @@@ static void bluesleep_tx_timer_expire(u
+  	/* were we silent during the last timeout? */
+  	if (!test_bit(BT_TXDATA, &flags)) {
+  		BT_DBG("Tx has been idle");
+++<<<<<<< HEAD
+ +
+++=======
++ 		if (bsi->has_ext_wake == 1)
++ 			gpio_set_value(bsi->ext_wake, 0);
++ 		clear_bit(BT_EXT_WAKE, &flags);
+++>>>>>>> FETCH_HEAD
+  		bluesleep_tx_idle();
+  	} else {
+  		BT_DBG("Tx data during last period");
+@@@ -744,11 -739,11 +948,19 @@@ static int bluesleep_probe(struct platf
+  	int ret;
+  	struct resource *res;
+  
+++<<<<<<< HEAD
+ +	BT_ERR("bluesleep probe\n");
+ +
+ +	bsi = kzalloc(sizeof(struct bluesleep_info), GFP_KERNEL);
+ +	if (!bsi) {
+ +		BT_ERR("failed to allocate memory to bsi\n");
+++=======
++     BT_ERR("bluesleep probe\n");
++ 
++ 	bsi = kzalloc(sizeof(struct bluesleep_info), GFP_KERNEL);
++ 	if (!bsi) {
++         BT_ERR("failed to allocate memory to bsi\n");
+++>>>>>>> FETCH_HEAD
+  		return -ENOMEM;
+  	}
+  
+@@@ -802,7 -797,7 +1014,11 @@@
+  		}
+  
+  		/* configure ext_wake as output mode*/
+++<<<<<<< HEAD
+ +		ret = gpio_direction_output(bsi->ext_wake, 0);
+++=======
++ 		ret = gpio_direction_output(bsi->ext_wake, 1);
+++>>>>>>> FETCH_HEAD
+  		if (ret < 0) {
+  			BT_ERR("gpio-keys: failed to configure output direction for GPIO %d, error %d",
+  				  bsi->ext_wake, ret);
+@@@ -875,7 -870,7 +1091,11 @@@ static int bluesleep_resume(struct plat
+  {
+  	if (test_bit(BT_SUSPEND, &flags)) {
+  #ifndef CONFIG_BT_BCM4354
+++<<<<<<< HEAD
+ +		if (!bt_enabled) {
+++=======
++ 		if (!has_lpm_enabled) {
+++>>>>>>> FETCH_HEAD
+  			gpio_tlmm_config(GPIO_CFG(bsi->host_wake, 0, GPIO_CFG_INPUT,
+  						GPIO_CFG_NO_PULL, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
+  		}
+@@@ -893,7 -888,7 +1113,11 @@@
+  static int bluesleep_suspend(struct platform_device *pdev, pm_message_t state)
+  {
+  #ifndef CONFIG_BT_BCM4354
+++<<<<<<< HEAD
+ +	if (!bt_enabled) {
+++=======
++ 	if (!has_lpm_enabled) {
+++>>>>>>> FETCH_HEAD
+  		gpio_tlmm_config(GPIO_CFG(bsi->host_wake, 0, GPIO_CFG_INPUT,
+  						GPIO_CFG_PULL_DOWN, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
+  	}
+@@@ -924,7 -919,9 +1148,13 @@@ static int __init bluesleep_init(void
+  
+  	BT_INFO("BlueSleep Mode Driver Ver %s", VERSION);
+  
+++<<<<<<< HEAD
+ +	bt_enabled = false;
+++=======
++ #if BT_BLUEDROID_SUPPORT
++ 	has_lpm_enabled = false;
++ #endif
+++>>>>>>> FETCH_HEAD
+  
+  	retval = platform_driver_register(&bluesleep_driver);
+  
+@@@ -937,6 -934,10 +1167,13 @@@
+  		return -1;
+  	}
+  
+++<<<<<<< HEAD
+++=======
++ #if !BT_BLUEDROID_SUPPORT
++ 	bluesleep_hdev = NULL;
++ #endif
++ 
+++>>>>>>> FETCH_HEAD
+  	bluetooth_dir = proc_mkdir("bluetooth", NULL);
+  	if (bluetooth_dir == NULL) {
+  		BT_ERR("Unable to create /proc/bluetooth directory");
+@@@ -985,6 -986,7 +1222,10 @@@
+  		goto fail;
+  	}
+  
+++<<<<<<< HEAD
+++=======
++ #if BT_BLUEDROID_SUPPORT
+++>>>>>>> FETCH_HEAD
+  	/* read/write proc entries */
+  	ent = create_proc_entry("lpm", 0, sleep_dir);
+  	if (ent == NULL) {
+@@@ -1004,6 -1006,7 +1245,10 @@@
+  	}
+  	ent->read_proc = bluesleep_read_proc_btwrite;
+  	ent->write_proc = bluesleep_write_proc_btwrite;
+++<<<<<<< HEAD
+++=======
++ #endif
+++>>>>>>> FETCH_HEAD
+  
+  	flags = 0; /* clear all status bits */
+  
+@@@ -1027,12 -1030,17 +1272,25 @@@
+  	}
+  	*/
+  	set_bit(BT_EXT_WAKE, &flags);
+++<<<<<<< HEAD
+++=======
++ #if !BT_BLUEDROID_SUPPORT
++ 	hci_register_notifier(&hci_event_nblock);
++ #endif
+++>>>>>>> FETCH_HEAD
+  
+  	return 0;
+  
+  fail:
+++<<<<<<< HEAD
+++	remove_proc_entry("btwrite", sleep_dir);
+++	remove_proc_entry("lpm", sleep_dir);
+++=======
++ #if BT_BLUEDROID_SUPPORT
+  	remove_proc_entry("btwrite", sleep_dir);
+  	remove_proc_entry("lpm", sleep_dir);
++ #endif
+++>>>>>>> FETCH_HEAD
+  	remove_proc_entry("asleep", sleep_dir);
+  	remove_proc_entry("proto", sleep_dir);
+  	remove_proc_entry("hostwake", sleep_dir);
+@@@ -1064,10 -1072,15 +1322,22 @@@ static void __exit bluesleep_exit(void
+  			hsuart_power(1);
+  	}
+  
+++<<<<<<< HEAD
+ +	platform_driver_unregister(&bluesleep_driver);
+ +
+ +	remove_proc_entry("btwrite", sleep_dir);
+ +	remove_proc_entry("lpm", sleep_dir);
+++=======
++ #if !BT_BLUEDROID_SUPPORT
++ 	hci_unregister_notifier(&hci_event_nblock);
++ #endif
++ 	platform_driver_unregister(&bluesleep_driver);
++ 
++ #if BT_BLUEDROID_SUPPORT
++ 	remove_proc_entry("btwrite", sleep_dir);
++ 	remove_proc_entry("lpm", sleep_dir);
++ #endif
+++>>>>>>> FETCH_HEAD
+  	remove_proc_entry("asleep", sleep_dir);
+  	remove_proc_entry("proto", sleep_dir);
+  	remove_proc_entry("hostwake", sleep_dir);
+diff --cc drivers/bluetooth/bluetooth-power.c
+index 13c9080,9ccee05..0000000
+--- a/drivers/bluetooth/bluetooth-power.c
++++ b/drivers/bluetooth/bluetooth-power.c
+@@@ -30,7 -30,7 +30,11 @@@
+  #define BT_PWR_DBG(fmt, arg...)  pr_debug("%s: " fmt "\n" , __func__ , ## arg)
+  #define BT_PWR_INFO(fmt, arg...) pr_info("%s: " fmt "\n" , __func__ , ## arg)
+  #define BT_PWR_ERR(fmt, arg...)  pr_err("%s: " fmt "\n" , __func__ , ## arg)
+++<<<<<<< HEAD
+ +
+++=======
++ #define BT_VDD_PA_CURRENT        60000
+++>>>>>>> FETCH_HEAD
+  
+  static struct of_device_id bt_power_match_table[] = {
+  	{	.compatible = "qca,ar3002" },
+@@@ -213,6 -213,9 +217,12 @@@ static int bluetooth_power(int on
+  				BT_PWR_ERR("bt_power vddpa config failed");
+  				goto vdd_pa_fail;
+  			}
+++<<<<<<< HEAD
+++=======
++ 			regulator_set_optimum_mode(
++ 				bt_power_pdata->bt_vdd_pa->reg,
++ 				BT_VDD_PA_CURRENT);
+++>>>>>>> FETCH_HEAD
+  		}
+  		if (bt_power_pdata->bt_chip_pwd) {
+  			rc = bt_configure_vreg(bt_power_pdata->bt_chip_pwd);
+diff --cc drivers/bluetooth/hci_ath.c
+index 0383d8f,8272528..0000000
+--- a/drivers/bluetooth/hci_ath.c
++++ b/drivers/bluetooth/hci_ath.c
+@@@ -5,7 -5,7 +5,11 @@@
+   *  power management protocol extension to H4 to support AR300x Bluetooth Chip.
+   *
+   *  Copyright (c) 2009-2010 Atheros Communications Inc.
+++<<<<<<< HEAD
+ + *  Copyright (c) 2012-2013 The Linux Foundation. All rights reserved.
+++=======
++  *  Copyright (c) 2012-2014 The Linux Foundation. All rights reserved.
+++>>>>>>> FETCH_HEAD
+   *
+   *  Acknowledgements:
+   *  This file is based on hci_h4.c, which was written
+diff --cc drivers/char/Kconfig
+index 02d76fc,a5748fb..0000000
+--- a/drivers/char/Kconfig
++++ b/drivers/char/Kconfig
+diff --cc drivers/char/Makefile
+index 8032f0b,292cc99..0000000
+--- a/drivers/char/Makefile
++++ b/drivers/char/Makefile
+diff --cc drivers/char/adsprpc.c
+index ff1cb89,f6c37a5..0000000
+--- a/drivers/char/adsprpc.c
++++ b/drivers/char/adsprpc.c
+diff --cc drivers/char/adsprpc_shared.h
+index da70eb5,f5d7450..0000000
+--- a/drivers/char/adsprpc_shared.h
++++ b/drivers/char/adsprpc_shared.h
+diff --cc drivers/char/diag/diag_dci.c
+index 91b90a8,0edfdad..0000000
+--- a/drivers/char/diag/diag_dci.c
++++ b/drivers/char/diag/diag_dci.c
+diff --cc drivers/char/diag/diag_dci.h
+index e2c4158,870b0f3..0000000
+--- a/drivers/char/diag/diag_dci.h
++++ b/drivers/char/diag/diag_dci.h
+diff --cc drivers/char/diag/diag_debugfs.c
+index beaf75d,3a1c96b..0000000
+--- a/drivers/char/diag/diag_debugfs.c
++++ b/drivers/char/diag/diag_debugfs.c
+diff --cc drivers/char/diag/diag_masks.c
+index c28b3bd,8b00ece..0000000
+--- a/drivers/char/diag/diag_masks.c
++++ b/drivers/char/diag/diag_masks.c
+diff --cc drivers/char/diag/diag_masks.h
+index 856d4fc,3ec087d..0000000
+--- a/drivers/char/diag/diag_masks.h
++++ b/drivers/char/diag/diag_masks.h
+diff --cc drivers/char/diag/diagchar.h
+index f1d4bdb,f13d724..0000000
+--- a/drivers/char/diag/diagchar.h
++++ b/drivers/char/diag/diagchar.h
+diff --cc drivers/char/diag/diagchar_core.c
+index dd6ed23,9698970..0000000
+--- a/drivers/char/diag/diagchar_core.c
++++ b/drivers/char/diag/diagchar_core.c
+diff --cc drivers/char/diag/diagchar_hdlc.c
+index 3e38a3c,6f527a5..0000000
+--- a/drivers/char/diag/diagchar_hdlc.c
++++ b/drivers/char/diag/diagchar_hdlc.c
+diff --cc drivers/char/diag/diagfwd.c
+index ba3ecc2,028f045..0000000
+--- a/drivers/char/diag/diagfwd.c
++++ b/drivers/char/diag/diagfwd.c
+diff --cc drivers/char/diag/diagfwd_cntl.c
+index d3c311d,a75f7f69..0000000
+--- a/drivers/char/diag/diagfwd_cntl.c
++++ b/drivers/char/diag/diagfwd_cntl.c
+diff --cc drivers/char/hw_random/msm_rng.c
+index 369477f,4118a7a..0000000
+--- a/drivers/char/hw_random/msm_rng.c
++++ b/drivers/char/hw_random/msm_rng.c
+diff --cc drivers/char/random.c
+index c462191,1971ccd..0000000
+--- a/drivers/char/random.c
++++ b/drivers/char/random.c
+diff --cc drivers/cpufreq/cpu-boost.c
+index bd6d138,f3bf5bc..0000000
+--- a/drivers/cpufreq/cpu-boost.c
++++ b/drivers/cpufreq/cpu-boost.c
+diff --cc drivers/cpufreq/cpufreq.c
+index 6aac168,b3f3243..0000000
+--- a/drivers/cpufreq/cpufreq.c
++++ b/drivers/cpufreq/cpufreq.c
+diff --cc drivers/cpufreq/cpufreq_interactive.c
+index 8215155,bbcdbc7..0000000
+--- a/drivers/cpufreq/cpufreq_interactive.c
++++ b/drivers/cpufreq/cpufreq_interactive.c
+diff --cc drivers/cpufreq/cpufreq_ondemand.c
+index 1554031,6644751..0000000
+--- a/drivers/cpufreq/cpufreq_ondemand.c
++++ b/drivers/cpufreq/cpufreq_ondemand.c
+diff --cc drivers/crypto/msm/qce.h
+index afd5141,73438d0..0000000
+--- a/drivers/crypto/msm/qce.h
++++ b/drivers/crypto/msm/qce.h
+diff --cc drivers/crypto/msm/qce50.c
+index a4154c1,62fd948..0000000
+--- a/drivers/crypto/msm/qce50.c
++++ b/drivers/crypto/msm/qce50.c
+diff --cc drivers/crypto/msm/qce50.h
+index adab5d4,fc387aa..0000000
+--- a/drivers/crypto/msm/qce50.h
++++ b/drivers/crypto/msm/qce50.h
+diff --cc drivers/crypto/msm/qcrypto.c
+index 72c2f4f,17fb0b2..0000000
+--- a/drivers/crypto/msm/qcrypto.c
++++ b/drivers/crypto/msm/qcrypto.c
+diff --cc drivers/devfreq/Kconfig
+index 17bbe19,ca7953d..0000000
+--- a/drivers/devfreq/Kconfig
++++ b/drivers/devfreq/Kconfig
+diff --cc drivers/devfreq/Makefile
+index 29b48ff,e06ed9f..0000000
+--- a/drivers/devfreq/Makefile
++++ b/drivers/devfreq/Makefile
+diff --cc drivers/devfreq/devfreq.c
+index 9e49b3e,e13fb5f..0000000
+--- a/drivers/devfreq/devfreq.c
++++ b/drivers/devfreq/devfreq.c
+diff --cc drivers/devfreq/governor_performance.c
+index af2edc2,74ae3bb..0000000
+--- a/drivers/devfreq/governor_performance.c
++++ b/drivers/devfreq/governor_performance.c
+diff --cc drivers/devfreq/governor_simpleondemand.c
+index bb29360,d37997d..0000000
+--- a/drivers/devfreq/governor_simpleondemand.c
++++ b/drivers/devfreq/governor_simpleondemand.c
+diff --cc drivers/gpio/qpnp-pin.c
+index 5af063a,e6d41b0..0000000
+--- a/drivers/gpio/qpnp-pin.c
++++ b/drivers/gpio/qpnp-pin.c
+diff --cc drivers/gpu/ion/Kconfig
+index 5bb254b,ca5d3ab..0000000
+--- a/drivers/gpu/ion/Kconfig
++++ b/drivers/gpu/ion/Kconfig
+diff --cc drivers/gpu/ion/Makefile
+index 108abe6,3db0e87..0000000
+--- a/drivers/gpu/ion/Makefile
++++ b/drivers/gpu/ion/Makefile
+diff --cc drivers/gpu/ion/ion.c
+index 3f70a7a,10ed7a5..0000000
+--- a/drivers/gpu/ion/ion.c
++++ b/drivers/gpu/ion/ion.c
+diff --cc drivers/gpu/ion/ion_carveout_heap.c
+index 94e10e5,3fe7985..0000000
+--- a/drivers/gpu/ion/ion_carveout_heap.c
++++ b/drivers/gpu/ion/ion_carveout_heap.c
+diff --cc drivers/gpu/ion/ion_chunk_heap.c
+index b76f898,82081c5..0000000
+--- a/drivers/gpu/ion/ion_chunk_heap.c
++++ b/drivers/gpu/ion/ion_chunk_heap.c
+diff --cc drivers/gpu/ion/ion_cma_heap.c
+index 5aac4b4,a9942cd..0000000
+--- a/drivers/gpu/ion/ion_cma_heap.c
++++ b/drivers/gpu/ion/ion_cma_heap.c
+diff --cc drivers/gpu/ion/ion_cma_secure_heap.c
+index bdf48b3,e9dc74b..0000000
+--- a/drivers/gpu/ion/ion_cma_secure_heap.c
++++ b/drivers/gpu/ion/ion_cma_secure_heap.c
+diff --cc drivers/gpu/ion/ion_heap.c
+index 8b259e7,47de245..0000000
+--- a/drivers/gpu/ion/ion_heap.c
++++ b/drivers/gpu/ion/ion_heap.c
+diff --cc drivers/gpu/ion/ion_page_pool.c
+index 94f9445,437e1f1..0000000
+--- a/drivers/gpu/ion/ion_page_pool.c
++++ b/drivers/gpu/ion/ion_page_pool.c
+diff --cc drivers/gpu/ion/ion_priv.h
+index 2b00ee6,842e512..0000000
+--- a/drivers/gpu/ion/ion_priv.h
++++ b/drivers/gpu/ion/ion_priv.h
+diff --cc drivers/gpu/ion/ion_removed_heap.c
+index 94d4a25,8615ae5..0000000
+--- a/drivers/gpu/ion/ion_removed_heap.c
++++ b/drivers/gpu/ion/ion_removed_heap.c
+diff --cc drivers/gpu/ion/ion_system_heap.c
+index 8e885b2,b225d4a..0000000
+--- a/drivers/gpu/ion/ion_system_heap.c
++++ b/drivers/gpu/ion/ion_system_heap.c
+diff --cc drivers/gpu/ion/msm/Makefile
+index becdb02,25d515a..0000000
+--- a/drivers/gpu/ion/msm/Makefile
++++ b/drivers/gpu/ion/msm/Makefile
+diff --cc drivers/gpu/ion/msm/ion_cp_common.h
+index ded6af9,249f58d..0000000
+--- a/drivers/gpu/ion/msm/ion_cp_common.h
++++ b/drivers/gpu/ion/msm/ion_cp_common.h
+diff --cc drivers/gpu/ion/msm/ion_iommu_map.c
+index c2b65ba,4ccde0a..0000000
+--- a/drivers/gpu/ion/msm/ion_iommu_map.c
++++ b/drivers/gpu/ion/msm/ion_iommu_map.c
+diff --cc drivers/gpu/ion/msm/msm_ion.c
+index 18e98c1,89626da..0000000
+--- a/drivers/gpu/ion/msm/msm_ion.c
++++ b/drivers/gpu/ion/msm/msm_ion.c
+diff --cc drivers/gpu/ion/msm_ion_priv.h
+index 412ead2,3225f1a..0000000
+--- a/drivers/gpu/ion/msm_ion_priv.h
++++ b/drivers/gpu/ion/msm_ion_priv.h
+diff --cc drivers/gpu/msm/adreno.c
+index 8f5dce2,e65de43..0000000
+--- a/drivers/gpu/msm/adreno.c
++++ b/drivers/gpu/msm/adreno.c
+diff --cc drivers/gpu/msm/adreno.h
+index 92794ec,a749b53..0000000
+--- a/drivers/gpu/msm/adreno.h
++++ b/drivers/gpu/msm/adreno.h
+diff --cc drivers/gpu/msm/adreno_a2xx.c
+index 622350d3,335a889..0000000
+--- a/drivers/gpu/msm/adreno_a2xx.c
++++ b/drivers/gpu/msm/adreno_a2xx.c
+diff --cc drivers/gpu/msm/adreno_a3xx.c
+index 84275a7,47b239e..0000000
+--- a/drivers/gpu/msm/adreno_a3xx.c
++++ b/drivers/gpu/msm/adreno_a3xx.c
+diff --cc drivers/gpu/msm/adreno_a3xx_snapshot.c
+index 56c4305,9f5765d..0000000
+--- a/drivers/gpu/msm/adreno_a3xx_snapshot.c
++++ b/drivers/gpu/msm/adreno_a3xx_snapshot.c
+diff --cc drivers/gpu/msm/adreno_coresight.c
+index 1b827ff,6ac4af8..0000000
+--- a/drivers/gpu/msm/adreno_coresight.c
++++ b/drivers/gpu/msm/adreno_coresight.c
+diff --cc drivers/gpu/msm/adreno_dispatch.c
+index 2da36b6,95e4017..0000000
+--- a/drivers/gpu/msm/adreno_dispatch.c
++++ b/drivers/gpu/msm/adreno_dispatch.c
+diff --cc drivers/gpu/msm/adreno_drawctxt.c
+index 6007a3f,136456a..0000000
+--- a/drivers/gpu/msm/adreno_drawctxt.c
++++ b/drivers/gpu/msm/adreno_drawctxt.c
+diff --cc drivers/gpu/msm/adreno_profile.c
+index 28fd6d6,26c8b69..0000000
+--- a/drivers/gpu/msm/adreno_profile.c
++++ b/drivers/gpu/msm/adreno_profile.c
+diff --cc drivers/gpu/msm/adreno_ringbuffer.c
+index 49a6244,7bbbc35..0000000
+--- a/drivers/gpu/msm/adreno_ringbuffer.c
++++ b/drivers/gpu/msm/adreno_ringbuffer.c
+diff --cc drivers/gpu/msm/kgsl.c
+index 392d6b7,d1a86c4..0000000
+--- a/drivers/gpu/msm/kgsl.c
++++ b/drivers/gpu/msm/kgsl.c
+diff --cc drivers/gpu/msm/kgsl.h
+index 6da4a86,de1254b..0000000
+--- a/drivers/gpu/msm/kgsl.h
++++ b/drivers/gpu/msm/kgsl.h
+diff --cc drivers/gpu/msm/kgsl_device.h
+index 7fc6fae,5f63cb6..0000000
+--- a/drivers/gpu/msm/kgsl_device.h
++++ b/drivers/gpu/msm/kgsl_device.h
+diff --cc drivers/gpu/msm/kgsl_events.c
+index e21fd88,ccd13d5..0000000
+--- a/drivers/gpu/msm/kgsl_events.c
++++ b/drivers/gpu/msm/kgsl_events.c
+diff --cc drivers/gpu/msm/kgsl_iommu.c
+index 60dd8ac,efcc225..0000000
+mode 100644,100755..100755
+--- a/drivers/gpu/msm/kgsl_iommu.c
++++ b/drivers/gpu/msm/kgsl_iommu.c
+diff --cc drivers/gpu/msm/kgsl_iommu.h
+index 7dca40e,3878107..0000000
+--- a/drivers/gpu/msm/kgsl_iommu.h
++++ b/drivers/gpu/msm/kgsl_iommu.h
+diff --cc drivers/gpu/msm/kgsl_mmu.c
+index 5ddc46b,f9e628e..0000000
+--- a/drivers/gpu/msm/kgsl_mmu.c
++++ b/drivers/gpu/msm/kgsl_mmu.c
+diff --cc drivers/gpu/msm/kgsl_mmu.h
+index 8bc9962,5e3386a..0000000
+--- a/drivers/gpu/msm/kgsl_mmu.h
++++ b/drivers/gpu/msm/kgsl_mmu.h
+diff --cc drivers/gpu/msm/kgsl_pwrctrl.c
+index 3e15580,9353b2e..0000000
+--- a/drivers/gpu/msm/kgsl_pwrctrl.c
++++ b/drivers/gpu/msm/kgsl_pwrctrl.c
+diff --cc drivers/gpu/msm/kgsl_pwrctrl.h
+index 6ec809d,31c5229..0000000
+--- a/drivers/gpu/msm/kgsl_pwrctrl.h
++++ b/drivers/gpu/msm/kgsl_pwrctrl.h
+diff --cc drivers/gpu/msm/kgsl_pwrscale.c
+index 52732cf,dc313ba..0000000
+--- a/drivers/gpu/msm/kgsl_pwrscale.c
++++ b/drivers/gpu/msm/kgsl_pwrscale.c
+diff --cc drivers/gpu/msm/kgsl_sharedmem.c
+index d031d5e,821b542..0000000
+--- a/drivers/gpu/msm/kgsl_sharedmem.c
++++ b/drivers/gpu/msm/kgsl_sharedmem.c
+diff --cc drivers/gpu/msm/kgsl_sharedmem.h
+index 505be69,8a2e7c4..0000000
+--- a/drivers/gpu/msm/kgsl_sharedmem.h
++++ b/drivers/gpu/msm/kgsl_sharedmem.h
+diff --cc drivers/hwmon/epm_adc.c
+index 8ed04fa,fee2a3f..0000000
+--- a/drivers/hwmon/epm_adc.c
++++ b/drivers/hwmon/epm_adc.c
+diff --cc drivers/hwmon/qpnp-adc-common.c
+index 9e0be59,7bc8773..0000000
+--- a/drivers/hwmon/qpnp-adc-common.c
++++ b/drivers/hwmon/qpnp-adc-common.c
+diff --cc drivers/hwmon/qpnp-adc-current.c
+index adaff41,067a887..0000000
+--- a/drivers/hwmon/qpnp-adc-current.c
++++ b/drivers/hwmon/qpnp-adc-current.c
+diff --cc drivers/hwmon/qpnp-adc-voltage.c
+index ca8381e,6004fbd..0000000
+--- a/drivers/hwmon/qpnp-adc-voltage.c
++++ b/drivers/hwmon/qpnp-adc-voltage.c
+diff --cc drivers/i2c/busses/i2c-qup.c
+index 57aa835,1704105..0000000
+--- a/drivers/i2c/busses/i2c-qup.c
++++ b/drivers/i2c/busses/i2c-qup.c
+diff --cc drivers/input/input.c
+index a81ef1e,9363be7..0000000
+--- a/drivers/input/input.c
++++ b/drivers/input/input.c
+diff --cc drivers/input/keyboard/cypress_touchkey_ks01/cypress-touchkey.c
+index eb8282c,b34bc08..0000000
+--- a/drivers/input/keyboard/cypress_touchkey_ks01/cypress-touchkey.c
++++ b/drivers/input/keyboard/cypress_touchkey_ks01/cypress-touchkey.c
+diff --cc drivers/input/misc/Kconfig
+index 716ea0d,0c22694..0000000
+--- a/drivers/input/misc/Kconfig
++++ b/drivers/input/misc/Kconfig
+diff --cc drivers/input/misc/Makefile
+index c927e0e,c9a65fc..0000000
+--- a/drivers/input/misc/Makefile
++++ b/drivers/input/misc/Makefile
+diff --cc drivers/input/misc/bmp18x-core.c
+index 4b5b710,6f82277..0000000
+--- a/drivers/input/misc/bmp18x-core.c
++++ b/drivers/input/misc/bmp18x-core.c
+diff --cc drivers/input/misc/bmp18x-i2c.c
+index abbe6e5,75edd0b..0000000
+--- a/drivers/input/misc/bmp18x-i2c.c
++++ b/drivers/input/misc/bmp18x-i2c.c
+diff --cc drivers/input/misc/bmp18x.h
+index d1b1ee7,6b6c4b1..0000000
+--- a/drivers/input/misc/bmp18x.h
++++ b/drivers/input/misc/bmp18x.h
+diff --cc drivers/input/misc/cm36283.c
+index 35c92ca,a7b4735..0000000
+--- a/drivers/input/misc/cm36283.c
++++ b/drivers/input/misc/cm36283.c
+diff --cc drivers/input/misc/kxtj9.c
+index f5d8441,0883ac5..0000000
+--- a/drivers/input/misc/kxtj9.c
++++ b/drivers/input/misc/kxtj9.c
+diff --cc drivers/input/misc/mma8x5x.c
+index 91aa928,d708d94..0000000
+--- a/drivers/input/misc/mma8x5x.c
++++ b/drivers/input/misc/mma8x5x.c
+diff --cc drivers/input/misc/mpu3050.c
+index 642975d,9629aae..0000000
+--- a/drivers/input/misc/mpu3050.c
++++ b/drivers/input/misc/mpu3050.c
+diff --cc drivers/input/misc/stk3x1x.c
+index f1b060e,f9d3478..0000000
+--- a/drivers/input/misc/stk3x1x.c
++++ b/drivers/input/misc/stk3x1x.c
+diff --cc drivers/input/touchscreen/Kconfig
+index 1e59a8e,1397e77..0000000
+--- a/drivers/input/touchscreen/Kconfig
++++ b/drivers/input/touchscreen/Kconfig
+diff --cc drivers/input/touchscreen/Makefile
+index 365762e,9b9b675..0000000
+--- a/drivers/input/touchscreen/Makefile
++++ b/drivers/input/touchscreen/Makefile
+diff --cc drivers/input/touchscreen/atmel_mxt_ts.c
+index 3731561,cd6989c..0000000
+--- a/drivers/input/touchscreen/atmel_mxt_ts.c
++++ b/drivers/input/touchscreen/atmel_mxt_ts.c
+diff --cc drivers/input/touchscreen/cyttsp-i2c-qc.c
+index 6c4e6b7,2b1360e..0000000
+--- a/drivers/input/touchscreen/cyttsp-i2c-qc.c
++++ b/drivers/input/touchscreen/cyttsp-i2c-qc.c
+diff --cc drivers/input/touchscreen/ft5x06_ts.c
+index 9a4301e,4b8a3d4..0000000
+--- a/drivers/input/touchscreen/ft5x06_ts.c
++++ b/drivers/input/touchscreen/ft5x06_ts.c
+diff --cc drivers/input/touchscreen/gt9xx/goodix_tool.c
+index aa8159f,521599a..0000000
+--- a/drivers/input/touchscreen/gt9xx/goodix_tool.c
++++ b/drivers/input/touchscreen/gt9xx/goodix_tool.c
+diff --cc drivers/input/touchscreen/gt9xx/gt9xx.c
+index ba38061,91d787f..0000000
+--- a/drivers/input/touchscreen/gt9xx/gt9xx.c
++++ b/drivers/input/touchscreen/gt9xx/gt9xx.c
+diff --cc drivers/input/touchscreen/gt9xx/gt9xx.h
+index 1d31f2a,0ba6895..0000000
+--- a/drivers/input/touchscreen/gt9xx/gt9xx.h
++++ b/drivers/input/touchscreen/gt9xx/gt9xx.h
+diff --cc drivers/input/touchscreen/gt9xx/gt9xx_update.c
+index cf83154,af80eef..0000000
+--- a/drivers/input/touchscreen/gt9xx/gt9xx_update.c
++++ b/drivers/input/touchscreen/gt9xx/gt9xx_update.c
+diff --cc drivers/input/touchscreen/synaptics_fw_update.c
+index 7282c2e,dce9dee..0000000
+--- a/drivers/input/touchscreen/synaptics_fw_update.c
++++ b/drivers/input/touchscreen/synaptics_fw_update.c
+diff --cc drivers/input/touchscreen/synaptics_i2c_rmi4.c
+index d21b6c1,ca47547..0000000
+--- a/drivers/input/touchscreen/synaptics_i2c_rmi4.c
++++ b/drivers/input/touchscreen/synaptics_i2c_rmi4.c
+diff --cc drivers/input/touchscreen/synaptics_i2c_rmi4.h
+index ef39bb7,df227fb..0000000
+--- a/drivers/input/touchscreen/synaptics_i2c_rmi4.h
++++ b/drivers/input/touchscreen/synaptics_i2c_rmi4.h
+diff --cc drivers/input/touchscreen/synaptics_rmi_dev.c
+index c60ca23,8478b24..0000000
+--- a/drivers/input/touchscreen/synaptics_rmi_dev.c
++++ b/drivers/input/touchscreen/synaptics_rmi_dev.c
+diff --cc drivers/iommu/msm_iommu-v1.c
+index 84f81bf,ee07e5f..0000000
+--- a/drivers/iommu/msm_iommu-v1.c
++++ b/drivers/iommu/msm_iommu-v1.c
+diff --cc drivers/iommu/msm_iommu_sec.c
+index 5a1806e,4909c5b..0000000
+--- a/drivers/iommu/msm_iommu_sec.c
++++ b/drivers/iommu/msm_iommu_sec.c
+diff --cc drivers/leds/leds-qpnp.c
+index 5aba474,a3476e7..0000000
+--- a/drivers/leds/leds-qpnp.c
++++ b/drivers/leds/leds-qpnp.c
+diff --cc drivers/media/platform/msm/Kconfig
+index adef2b9,63328cd..0000000
+--- a/drivers/media/platform/msm/Kconfig
++++ b/drivers/media/platform/msm/Kconfig
+diff --cc drivers/media/platform/msm/Makefile
+index 8ea6a4a,13c9b00..0000000
+--- a/drivers/media/platform/msm/Makefile
++++ b/drivers/media/platform/msm/Makefile
+diff --cc drivers/media/platform/msm/camera_v2/Kconfig
+index fe5c5b2,262fb38..0000000
+--- a/drivers/media/platform/msm/camera_v2/Kconfig
++++ b/drivers/media/platform/msm/camera_v2/Kconfig
+diff --cc drivers/media/platform/msm/camera_v2/Makefile
+index a42a02f,02eb3dd..0000000
+--- a/drivers/media/platform/msm/camera_v2/Makefile
++++ b/drivers/media/platform/msm/camera_v2/Makefile
+diff --cc drivers/media/platform/msm/camera_v2/camera/camera.c
+index e719c6f,3f7ba6b..0000000
+--- a/drivers/media/platform/msm/camera_v2/camera/camera.c
++++ b/drivers/media/platform/msm/camera_v2/camera/camera.c
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_buf_mgr.c
+index 663d210,a85f853..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_buf_mgr.c
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_buf_mgr.c
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_buf_mgr.h
+index 068b2a7,d8d3ba2..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_buf_mgr.h
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_buf_mgr.h
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_isp.c
+index b2d8854,80a0073..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_isp.c
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_isp.c
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_isp.h
+index cf03c7f,d33d34b..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_isp.h
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_isp.h
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_isp32.c
+index 73b4f4d,044f6f1..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_isp32.c
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_isp32.c
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_isp40.c
+index ac56efa,d53d7f6..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_isp40.c
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_isp40.c
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_isp_axi_util.c
+index 8f4bfe3,0264d6d..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_isp_axi_util.c
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_isp_axi_util.c
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_isp_stats_util.c
+index 36239a2,8b83144..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_isp_stats_util.c
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_isp_stats_util.c
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_isp_util.c
+index de2cf6e,057e87f..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_isp_util.c
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_isp_util.c
+diff --cc drivers/media/platform/msm/camera_v2/isp/msm_isp_util.h
+index 385ec5c,3364306..0000000
+--- a/drivers/media/platform/msm/camera_v2/isp/msm_isp_util.h
++++ b/drivers/media/platform/msm/camera_v2/isp/msm_isp_util.h
+diff --cc drivers/media/platform/msm/camera_v2/ispif/msm_ispif.c
+index 2bd5189,70042f2..0000000
+mode 100644,100755..100755
+--- a/drivers/media/platform/msm/camera_v2/ispif/msm_ispif.c
++++ b/drivers/media/platform/msm/camera_v2/ispif/msm_ispif.c
+diff --cc drivers/media/platform/msm/camera_v2/ispif/msm_ispif_hwreg_v1.h
+index 6396486,567a263..0000000
+--- a/drivers/media/platform/msm/camera_v2/ispif/msm_ispif_hwreg_v1.h
++++ b/drivers/media/platform/msm/camera_v2/ispif/msm_ispif_hwreg_v1.h
+diff --cc drivers/media/platform/msm/camera_v2/ispif/msm_ispif_hwreg_v2.h
+index c805c3d,3cc21a7..0000000
+--- a/drivers/media/platform/msm/camera_v2/ispif/msm_ispif_hwreg_v2.h
++++ b/drivers/media/platform/msm/camera_v2/ispif/msm_ispif_hwreg_v2.h
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_common.h
+index 04af6b6,634beca..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_common.h
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_common.h
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_core.c
+index a2fc813,5201134..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_core.c
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_core.c
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_dev.c
+index f03971f,7a06c00..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_dev.c
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_dev.c
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw.c
+index c38771b,cd35eb6..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw.c
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw.c
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw.h
+index 084e36b,4ff4292..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw.h
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw.h
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw_reg.h
+index f970c79,4fbab4b..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw_reg.h
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_hw_reg.h
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_platform.c
+index ba41ca6,407b81f..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_platform.c
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_platform.c
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_platform.h
+index cd80d2e,7be9e19..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_platform.h
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_platform.h
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_sync.c
+index 60918d6,5c0dc22..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_sync.c
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_sync.c
+diff --cc drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_sync.h
+index be889cd,c3a57e3..0000000
+--- a/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_sync.h
++++ b/drivers/media/platform/msm/camera_v2/jpeg_10/msm_jpeg_sync.h
+diff --cc drivers/media/platform/msm/camera_v2/msm.c
+index b5c62df,f8f5110..0000000
+--- a/drivers/media/platform/msm/camera_v2/msm.c
++++ b/drivers/media/platform/msm/camera_v2/msm.c
+diff --cc drivers/media/platform/msm/camera_v2/msm.h
+index 63c1a11,32b7222..0000000
+--- a/drivers/media/platform/msm/camera_v2/msm.h
++++ b/drivers/media/platform/msm/camera_v2/msm.h
+diff --cc drivers/media/platform/msm/camera_v2/msm_buf_mgr/msm_generic_buf_mgr.c
+index 6b73c40,81d4eff..0000000
+--- a/drivers/media/platform/msm/camera_v2/msm_buf_mgr/msm_generic_buf_mgr.c
++++ b/drivers/media/platform/msm/camera_v2/msm_buf_mgr/msm_generic_buf_mgr.c
+diff --cc drivers/media/platform/msm/camera_v2/msm_buf_mgr/msm_generic_buf_mgr.h
+index 56886cd,82ea21f..0000000
+--- a/drivers/media/platform/msm/camera_v2/msm_buf_mgr/msm_generic_buf_mgr.h
++++ b/drivers/media/platform/msm/camera_v2/msm_buf_mgr/msm_generic_buf_mgr.h
+diff --cc drivers/media/platform/msm/camera_v2/msm_vb2/msm_vb2.c
+index 8fa8f8d,0fbaeca..0000000
+--- a/drivers/media/platform/msm/camera_v2/msm_vb2/msm_vb2.c
++++ b/drivers/media/platform/msm/camera_v2/msm_vb2/msm_vb2.c
+diff --cc drivers/media/platform/msm/camera_v2/pproc/Makefile
+index 854e4e7,4193adc..0000000
+--- a/drivers/media/platform/msm/camera_v2/pproc/Makefile
++++ b/drivers/media/platform/msm/camera_v2/pproc/Makefile
+diff --cc drivers/media/platform/msm/camera_v2/pproc/cpp/msm_cpp.c
+index 6396197,bba774d..0000000
+mode 100644,100755..100755
+--- a/drivers/media/platform/msm/camera_v2/pproc/cpp/msm_cpp.c
++++ b/drivers/media/platform/msm/camera_v2/pproc/cpp/msm_cpp.c
+diff --cc drivers/media/platform/msm/camera_v2/pproc/cpp/msm_cpp.h
+index 547cc5c,cf22e6c..0000000
+--- a/drivers/media/platform/msm/camera_v2/pproc/cpp/msm_cpp.h
++++ b/drivers/media/platform/msm/camera_v2/pproc/cpp/msm_cpp.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/Makefile
+index 381e598,d1ec5d8e..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/Makefile
++++ b/drivers/media/platform/msm/camera_v2/sensor/Makefile
+diff --cc drivers/media/platform/msm/camera_v2/sensor/actuator/msm_actuator.c
+index be7fc8b,ef8b996..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/actuator/msm_actuator.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/actuator/msm_actuator.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/actuator/msm_actuator.h
+index 390183d,7ec9a49..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/actuator/msm_actuator.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/actuator/msm_actuator.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/cci/msm_cam_cci_hwreg.h
+index ec6aa59,059633b..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/cci/msm_cam_cci_hwreg.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/cci/msm_cam_cci_hwreg.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/cci/msm_cci.c
+index 7c6e4f0,e072e53..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/cci/msm_cci.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/cci/msm_cci.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/cci/msm_cci.h
+index 81293f2,6067f26..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/cci/msm_cci.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/cci/msm_cci.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/csid/Makefile
+index 572e722,771167d..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/csid/Makefile
++++ b/drivers/media/platform/msm/camera_v2/sensor/csid/Makefile
+diff --cc drivers/media/platform/msm/camera_v2/sensor/csid/msm_csid.c
+index 8762fa0,981c210..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/csid/msm_csid.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/csid/msm_csid.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/csiphy/Makefile
+index eab1f6f,61671ea..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/csiphy/Makefile
++++ b/drivers/media/platform/msm/camera_v2/sensor/csiphy/Makefile
+diff --cc drivers/media/platform/msm/camera_v2/sensor/csiphy/include/csi2.0/msm_csiphy_hwreg.h
+index e5093f8,ba964a2..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/csiphy/include/csi2.0/msm_csiphy_hwreg.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/csiphy/include/csi2.0/msm_csiphy_hwreg.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/csiphy/msm_csiphy.c
+index 0a3008a,9a7c057..0000000
+mode 100644,100755..100755
+--- a/drivers/media/platform/msm/camera_v2/sensor/csiphy/msm_csiphy.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/csiphy/msm_csiphy.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.c
+index d8524d9,5c0e6d5..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.h
+index 7c119a9,e978824..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/eeprom/msm_eeprom.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/flash/Makefile
+index 4ce7372,9fc3817..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/flash/Makefile
++++ b/drivers/media/platform/msm/camera_v2/sensor/flash/Makefile
+diff --cc drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.c
+index 044fd31,149d00c..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.h
+index 76aa695,87b65ca..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_flash.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_trigger.c
+index f221de7,b88ac00..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_trigger.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/flash/msm_led_trigger.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/imx134.c
+index e366347,17a5088..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/imx134.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/imx134.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/imx135.c
+index d8c0be9,c26e4ff..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/imx135.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/imx135.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_cci_i2c.c
+index d844593,8d9274b..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_cci_i2c.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_cci_i2c.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_dt_util.c
+index 1708025,1fb113d..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_dt_util.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_dt_util.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_dt_util.h
+index 95875f0,d7f8507..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_dt_util.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_dt_util.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_i2c.h
+index d4ca61d,763c131..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_i2c.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_i2c.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_i2c_mux.c
+index 8648ce0,49759e6..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_i2c_mux.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_i2c_mux.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_io_util.c
+index a9ba749,46a0542..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_io_util.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_io_util.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_io_util.h
+index 187708c,2e6f809..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_io_util.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_io_util.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_qup_i2c.c
+index 2a68505,d5b89b7..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_qup_i2c.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_qup_i2c.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_spi.c
+index 5317e43,75b0063..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_spi.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_spi.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_spi.h
+index 4d937a3,0aefa50..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_spi.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/io/msm_camera_spi.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
+index f2017d3,87ad994..0000000
+mode 100644,100755..100755
+--- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
+index f042cbb,0f77567..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/msm_sensor_driver.c
+index c0358e9,f5be347..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor_driver.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor_driver.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/msm_sensor_driver.h
+index 63ca657,0394387..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor_driver.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor_driver.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/msm_sensor_init.c
+index 5c946f7,bc96eb8..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor_init.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor_init.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/msm_sensor_init.h
+index bd1c66c,256b0a1..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/msm_sensor_init.h
++++ b/drivers/media/platform/msm/camera_v2/sensor/msm_sensor_init.h
+diff --cc drivers/media/platform/msm/camera_v2/sensor/mt9m114.c
+index 02ff7a2,1d58490..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/mt9m114.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/mt9m114.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/ov2720.c
+index 7ce1d9f,397564b..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/ov2720.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/ov2720.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/ov8825.c
+index 41b7b4c,e17c94e..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/ov8825.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/ov8825.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/ov9724.c
+index 299e512,99bf03a..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/ov9724.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/ov9724.c
+diff --cc drivers/media/platform/msm/camera_v2/sensor/s5k3l1yx.c
+index a5e339b,225e81d..0000000
+--- a/drivers/media/platform/msm/camera_v2/sensor/s5k3l1yx.c
++++ b/drivers/media/platform/msm/camera_v2/sensor/s5k3l1yx.c
+diff --cc drivers/media/platform/msm/dvb/demux/mpq_dmx_plugin_common.c
+index 19a378f,5694658..0000000
+--- a/drivers/media/platform/msm/dvb/demux/mpq_dmx_plugin_common.c
++++ b/drivers/media/platform/msm/dvb/demux/mpq_dmx_plugin_common.c
+diff --cc drivers/media/platform/msm/vidc/hfi_packetization.c
+index 2fb3c35,4b7a3be..0000000
+--- a/drivers/media/platform/msm/vidc/hfi_packetization.c
++++ b/drivers/media/platform/msm/vidc/hfi_packetization.c
+diff --cc drivers/media/platform/msm/vidc/hfi_response_handler.c
+index 189fca0,3d63205..0000000
+--- a/drivers/media/platform/msm/vidc/hfi_response_handler.c
++++ b/drivers/media/platform/msm/vidc/hfi_response_handler.c
+diff --cc drivers/media/platform/msm/vidc/msm_smem.c
+index 5140a03,9604a09..0000000
+--- a/drivers/media/platform/msm/vidc/msm_smem.c
++++ b/drivers/media/platform/msm/vidc/msm_smem.c
+diff --cc drivers/media/platform/msm/vidc/msm_v4l2_vidc.c
+index 468ba74,4a25801..0000000
+--- a/drivers/media/platform/msm/vidc/msm_v4l2_vidc.c
++++ b/drivers/media/platform/msm/vidc/msm_v4l2_vidc.c
+diff --cc drivers/media/platform/msm/vidc/msm_vdec.c
+index 1c44548,40cc56b..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vdec.c
++++ b/drivers/media/platform/msm/vidc/msm_vdec.c
+diff --cc drivers/media/platform/msm/vidc/msm_venc.c
+index c0bf32c,9d62623..0000000
+--- a/drivers/media/platform/msm/vidc/msm_venc.c
++++ b/drivers/media/platform/msm/vidc/msm_venc.c
+diff --cc drivers/media/platform/msm/vidc/msm_venc.h
+index 9020167,5965d39..0000000
+--- a/drivers/media/platform/msm/vidc/msm_venc.h
++++ b/drivers/media/platform/msm/vidc/msm_venc.h
+diff --cc drivers/media/platform/msm/vidc/msm_vidc.c
+index 86493f1,c49dffa..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vidc.c
++++ b/drivers/media/platform/msm/vidc/msm_vidc.c
+diff --cc drivers/media/platform/msm/vidc/msm_vidc_common.c
+index c7408fc,fbfd424..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vidc_common.c
++++ b/drivers/media/platform/msm/vidc/msm_vidc_common.c
+diff --cc drivers/media/platform/msm/vidc/msm_vidc_common.h
+index e915395,da71424..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vidc_common.h
++++ b/drivers/media/platform/msm/vidc/msm_vidc_common.h
+diff --cc drivers/media/platform/msm/vidc/msm_vidc_debug.c
+index 5a18265,f272a3e..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vidc_debug.c
++++ b/drivers/media/platform/msm/vidc/msm_vidc_debug.c
+diff --cc drivers/media/platform/msm/vidc/msm_vidc_debug.h
+index c9ecc6f,83eb3b9..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vidc_debug.h
++++ b/drivers/media/platform/msm/vidc/msm_vidc_debug.h
+diff --cc drivers/media/platform/msm/vidc/msm_vidc_internal.h
+index 28b2ad1,1677e57..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vidc_internal.h
++++ b/drivers/media/platform/msm/vidc/msm_vidc_internal.h
+diff --cc drivers/media/platform/msm/vidc/msm_vidc_res_parse.c
+index 394ecdc5,9ab9b5d..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vidc_res_parse.c
++++ b/drivers/media/platform/msm/vidc/msm_vidc_res_parse.c
+diff --cc drivers/media/platform/msm/vidc/msm_vidc_resources.h
+index e75b410,87d4d42..0000000
+--- a/drivers/media/platform/msm/vidc/msm_vidc_resources.h
++++ b/drivers/media/platform/msm/vidc/msm_vidc_resources.h
+diff --cc drivers/media/platform/msm/vidc/q6_hfi.c
+index 8e91f34,486d740..0000000
+--- a/drivers/media/platform/msm/vidc/q6_hfi.c
++++ b/drivers/media/platform/msm/vidc/q6_hfi.c
+diff --cc drivers/media/platform/msm/vidc/venus_hfi.c
+index d825268,2932bf9..0000000
+--- a/drivers/media/platform/msm/vidc/venus_hfi.c
++++ b/drivers/media/platform/msm/vidc/venus_hfi.c
+diff --cc drivers/media/platform/msm/vidc/venus_hfi.h
+index 4feda45,23a51ba..0000000
+--- a/drivers/media/platform/msm/vidc/venus_hfi.h
++++ b/drivers/media/platform/msm/vidc/venus_hfi.h
+diff --cc drivers/media/platform/msm/vidc/vidc_hfi.c
+index 46293a6,ef0de37..0000000
+--- a/drivers/media/platform/msm/vidc/vidc_hfi.c
++++ b/drivers/media/platform/msm/vidc/vidc_hfi.c
+diff --cc drivers/media/platform/msm/vidc/vidc_hfi.h
+index 70b93ff0,75f583f..0000000
+--- a/drivers/media/platform/msm/vidc/vidc_hfi.h
++++ b/drivers/media/platform/msm/vidc/vidc_hfi.h
+diff --cc drivers/media/platform/msm/vidc/vidc_hfi_api.h
+index 846171e,e3c28ed..0000000
+--- a/drivers/media/platform/msm/vidc/vidc_hfi_api.h
++++ b/drivers/media/platform/msm/vidc/vidc_hfi_api.h
+diff --cc drivers/media/platform/msm/vidc/vidc_hfi_helper.h
+index 1916e9f,f5c8888..0000000
+--- a/drivers/media/platform/msm/vidc/vidc_hfi_helper.h
++++ b/drivers/media/platform/msm/vidc/vidc_hfi_helper.h
+diff --cc drivers/media/platform/msm/vidc/vidc_hfi_io.h
+index 6970df6,b811948..0000000
+--- a/drivers/media/platform/msm/vidc/vidc_hfi_io.h
++++ b/drivers/media/platform/msm/vidc/vidc_hfi_io.h
+diff --cc drivers/media/platform/msm/wfd/enc-venus-subdev.c
+index 9cd199b,40d1b2c..0000000
+--- a/drivers/media/platform/msm/wfd/enc-venus-subdev.c
++++ b/drivers/media/platform/msm/wfd/enc-venus-subdev.c
+diff --cc drivers/media/platform/msm/wfd/mdp-5-subdev.c
+index 97204ae,a28cb1a..0000000
+--- a/drivers/media/platform/msm/wfd/mdp-5-subdev.c
++++ b/drivers/media/platform/msm/wfd/mdp-5-subdev.c
+diff --cc drivers/media/platform/msm/wfd/vsg-subdev.c
+index c20250e,433468e..0000000
+--- a/drivers/media/platform/msm/wfd/vsg-subdev.c
++++ b/drivers/media/platform/msm/wfd/vsg-subdev.c
+diff --cc drivers/media/platform/msm/wfd/vsg-subdev.h
+index 3347e5b,bbaced1..0000000
+--- a/drivers/media/platform/msm/wfd/vsg-subdev.h
++++ b/drivers/media/platform/msm/wfd/vsg-subdev.h
+diff --cc drivers/media/radio/radio-iris-transport.c
+index 9a9b385,d3fe11c..0000000
+--- a/drivers/media/radio/radio-iris-transport.c
++++ b/drivers/media/radio/radio-iris-transport.c
+diff --cc drivers/media/radio/radio-iris.c
+index 9e25e42,9f18508..0000000
+--- a/drivers/media/radio/radio-iris.c
++++ b/drivers/media/radio/radio-iris.c
+diff --cc drivers/media/radio/radio-tavarua.c
+index 6b9f2b3,c44e2a5..0000000
+--- a/drivers/media/radio/radio-tavarua.c
++++ b/drivers/media/radio/radio-tavarua.c
+diff --cc drivers/media/video/Kconfig
+index a722a79,3596a87..0000000
+--- a/drivers/media/video/Kconfig
++++ b/drivers/media/video/Kconfig
+diff --cc drivers/media/video/Makefile
+index 1807467,26f96ca..0000000
+--- a/drivers/media/video/Makefile
++++ b/drivers/media/video/Makefile
+diff --cc drivers/media/video/v4l2-ctrls.c
+index 9dd06ee,127a231..0000000
+--- a/drivers/media/video/v4l2-ctrls.c
++++ b/drivers/media/video/v4l2-ctrls.c
+diff --cc drivers/media/video/v4l2-ioctl.c
+index 5b2ec1f,ca28003..0000000
+--- a/drivers/media/video/v4l2-ioctl.c
++++ b/drivers/media/video/v4l2-ioctl.c
+diff --cc drivers/mfd/ab3100-core.c
+index 1efad20,1287645..0000000
+--- a/drivers/mfd/ab3100-core.c
++++ b/drivers/mfd/ab3100-core.c
+diff --cc drivers/mfd/wcd9xxx-core-resource.c
+index 1791d72,1d0f894..0000000
+--- a/drivers/mfd/wcd9xxx-core-resource.c
++++ b/drivers/mfd/wcd9xxx-core-resource.c
+diff --cc drivers/mfd/wcd9xxx-core.c
+index 907ce7c,5eb359e..0000000
+--- a/drivers/mfd/wcd9xxx-core.c
++++ b/drivers/mfd/wcd9xxx-core.c
+diff --cc drivers/mfd/wcd9xxx-irq.c
+index 9209f0b,7644984..0000000
+--- a/drivers/mfd/wcd9xxx-irq.c
++++ b/drivers/mfd/wcd9xxx-irq.c
+diff --cc drivers/misc/Kconfig
+index 23d9dc5,026c8b8..0000000
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+diff --cc drivers/misc/isa1200.c
+index 8090b95,d7fa87b..0000000
+--- a/drivers/misc/isa1200.c
++++ b/drivers/misc/isa1200.c
+diff --cc drivers/misc/max77803-muic.c
+index c6c64f2,63bd603..0000000
+--- a/drivers/misc/max77803-muic.c
++++ b/drivers/misc/max77803-muic.c
+diff --cc drivers/misc/modem_if/modem_link_device_spi.c
+index 52c0e52,243071d..0000000
+--- a/drivers/misc/modem_if/modem_link_device_spi.c
++++ b/drivers/misc/modem_if/modem_link_device_spi.c
+diff --cc drivers/misc/modem_if/modem_modemctl_device_sc6500.c
+index b08e830,219df8a..0000000
+--- a/drivers/misc/modem_if/modem_modemctl_device_sc6500.c
++++ b/drivers/misc/modem_if/modem_modemctl_device_sc6500.c
+diff --cc drivers/misc/modem_if/modem_sim_slot_switch.c
+index 528fe08,b339169..0000000
+--- a/drivers/misc/modem_if/modem_sim_slot_switch.c
++++ b/drivers/misc/modem_if/modem_sim_slot_switch.c
+diff --cc drivers/misc/modem_if/sipc4_io_device.c
+index fd85b62,cf381b2..0000000
+--- a/drivers/misc/modem_if/sipc4_io_device.c
++++ b/drivers/misc/modem_if/sipc4_io_device.c
+diff --cc drivers/misc/pn547.c
+index 7cba744,3d9953e..0000000
+--- a/drivers/misc/pn547.c
++++ b/drivers/misc/pn547.c
+diff --cc drivers/misc/qfp_fuse.c
+index 3a088dc,6505e61..0000000
+--- a/drivers/misc/qfp_fuse.c
++++ b/drivers/misc/qfp_fuse.c
+diff --cc drivers/misc/qseecom.c
+index 77209c6,1839d07..0000000
+--- a/drivers/misc/qseecom.c
++++ b/drivers/misc/qseecom.c
+diff --cc drivers/misc/sec_jack.c
+index 502d663,2d9e438..0000000
+--- a/drivers/misc/sec_jack.c
++++ b/drivers/misc/sec_jack.c
+diff --cc drivers/misc/sec_misc.c
+index f729481,d2f8eca..0000000
+--- a/drivers/misc/sec_misc.c
++++ b/drivers/misc/sec_misc.c
+diff --cc drivers/misc/smsc_hub.c
+index 0147e66,6f98dc7..0000000
+--- a/drivers/misc/smsc_hub.c
++++ b/drivers/misc/smsc_hub.c
+diff --cc drivers/misc/tspp.c
+index 3d69473,19f26f2..0000000
+--- a/drivers/misc/tspp.c
++++ b/drivers/misc/tspp.c
+diff --cc drivers/misc/tzic.c
+index 850fdd9,d563a4c..0000000
+--- a/drivers/misc/tzic.c
++++ b/drivers/misc/tzic.c
+diff --cc drivers/mmc/card/Kconfig
+index 01e48b0,dce99b1..0000000
+--- a/drivers/mmc/card/Kconfig
++++ b/drivers/mmc/card/Kconfig
+diff --cc drivers/mmc/card/Makefile
+index a6772ad,d55107f..0000000
+--- a/drivers/mmc/card/Makefile
++++ b/drivers/mmc/card/Makefile
+diff --cc drivers/mmc/card/block.c
+index 2672917,cdc0410..0000000
+--- a/drivers/mmc/card/block.c
++++ b/drivers/mmc/card/block.c
+diff --cc drivers/mmc/card/mmc_block_test.c
+index 39296ef,5cc2806..0000000
+--- a/drivers/mmc/card/mmc_block_test.c
++++ b/drivers/mmc/card/mmc_block_test.c
+diff --cc drivers/mmc/card/queue.c
+index 8986829,fa3dcdc..0000000
+--- a/drivers/mmc/card/queue.c
++++ b/drivers/mmc/card/queue.c
+diff --cc drivers/mmc/core/bus.c
+index 83953f1,a6fcec5..0000000
+--- a/drivers/mmc/core/bus.c
++++ b/drivers/mmc/core/bus.c
+diff --cc drivers/mmc/core/core.c
+index 3ee1777,ac130b1..0000000
+--- a/drivers/mmc/core/core.c
++++ b/drivers/mmc/core/core.c
+diff --cc drivers/mmc/core/debugfs.c
+index 903decf,4ec8941..0000000
+--- a/drivers/mmc/core/debugfs.c
++++ b/drivers/mmc/core/debugfs.c
+diff --cc drivers/mmc/core/host.c
+index 2a2a9fe,c4b9724..0000000
+--- a/drivers/mmc/core/host.c
++++ b/drivers/mmc/core/host.c
+diff --cc drivers/mmc/core/mmc.c
+index 7a6f2db,6e4a346..0000000
+--- a/drivers/mmc/core/mmc.c
++++ b/drivers/mmc/core/mmc.c
+diff --cc drivers/mmc/core/quirks.c
+index f559006,bf08942..0000000
+--- a/drivers/mmc/core/quirks.c
++++ b/drivers/mmc/core/quirks.c
+diff --cc drivers/mmc/core/sdio.c
+index 65f2ba7,9814a83..0000000
+--- a/drivers/mmc/core/sdio.c
++++ b/drivers/mmc/core/sdio.c
+diff --cc drivers/mmc/host/msm_sdcc.c
+index 47c8b0d,4e04b0b..0000000
+--- a/drivers/mmc/host/msm_sdcc.c
++++ b/drivers/mmc/host/msm_sdcc.c
+diff --cc drivers/mmc/host/sdhci-msm.c
+index efa6d76,fd24327..0000000
+--- a/drivers/mmc/host/sdhci-msm.c
++++ b/drivers/mmc/host/sdhci-msm.c
+diff --cc drivers/mmc/host/sdhci.c
+index 8b7d85c,87160b5..0000000
+--- a/drivers/mmc/host/sdhci.c
++++ b/drivers/mmc/host/sdhci.c
+diff --cc drivers/mmc/host/sdhci.h
+index c0ce1be,118fd44..0000000
+--- a/drivers/mmc/host/sdhci.h
++++ b/drivers/mmc/host/sdhci.h
+diff --cc drivers/motor/Kconfig
+index 949506b,dbd3a68..0000000
+--- a/drivers/motor/Kconfig
++++ b/drivers/motor/Kconfig
+diff --cc drivers/motor/VibeOSKernelLinuxHRTime.c
+index bba4ebb,c58b4c8..0000000
+--- a/drivers/motor/VibeOSKernelLinuxHRTime.c
++++ b/drivers/motor/VibeOSKernelLinuxHRTime.c
+diff --cc drivers/motor/immvibespi.c
+index 4b72059,074d1b0..0000000
+--- a/drivers/motor/immvibespi.c
++++ b/drivers/motor/immvibespi.c
+diff --cc drivers/motor/tspdrv.c
+index a6c1e5c,45116a0..0000000
+--- a/drivers/motor/tspdrv.c
++++ b/drivers/motor/tspdrv.c
+diff --cc drivers/motor/tspdrv.h
+index ddf5e56,7b923d7..0000000
+--- a/drivers/motor/tspdrv.h
++++ b/drivers/motor/tspdrv.h
+diff --cc drivers/mtd/devices/msm_qpic_nand.c
+index 7f02187,2e06b42..0000000
+--- a/drivers/mtd/devices/msm_qpic_nand.c
++++ b/drivers/mtd/devices/msm_qpic_nand.c
+diff --cc drivers/net/ethernet/msm/ecm_ipa.c
+index 644a751,cc2ade4..0000000
+--- a/drivers/net/ethernet/msm/ecm_ipa.c
++++ b/drivers/net/ethernet/msm/ecm_ipa.c
+diff --cc drivers/net/ethernet/msm/msm_rmnet_bam.c
+index 9f06258,7ec317a..0000000
+--- a/drivers/net/ethernet/msm/msm_rmnet_bam.c
++++ b/drivers/net/ethernet/msm/msm_rmnet_bam.c
+diff --cc drivers/net/ppp/pppopns.c
+index 64f6e36,1681bd7..0000000
+--- a/drivers/net/ppp/pppopns.c
++++ b/drivers/net/ppp/pppopns.c
+diff --cc drivers/net/usb/rmnet_usb_ctrl.c
+index d1f3748,9682b48..0000000
+--- a/drivers/net/usb/rmnet_usb_ctrl.c
++++ b/drivers/net/usb/rmnet_usb_ctrl.c
+diff --cc drivers/net/usb/rmnet_usb_data.c
+index f9bb5c8,b0db01e..0000000
+--- a/drivers/net/usb/rmnet_usb_data.c
++++ b/drivers/net/usb/rmnet_usb_data.c
+diff --cc drivers/net/wireless/bcmdhd/Makefile
+index 7b3d01b,d2f69f3..0000000
+--- a/drivers/net/wireless/bcmdhd/Makefile
++++ b/drivers/net/wireless/bcmdhd/Makefile
+diff --cc drivers/net/wireless/bcmdhd/aiutils.c
+index 15c4099,ea94151..0000000
+--- a/drivers/net/wireless/bcmdhd/aiutils.c
++++ b/drivers/net/wireless/bcmdhd/aiutils.c
+diff --cc drivers/net/wireless/bcmdhd/bcmevent.c
+index d0a97ba,5fa7892..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmevent.c
++++ b/drivers/net/wireless/bcmdhd/bcmevent.c
+diff --cc drivers/net/wireless/bcmdhd/bcmsdh.c
+index e814276,d3cdd74..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmsdh.c
++++ b/drivers/net/wireless/bcmdhd/bcmsdh.c
+diff --cc drivers/net/wireless/bcmdhd/bcmsdh_linux.c
+index 4096953,2bfb2e4..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmsdh_linux.c
++++ b/drivers/net/wireless/bcmdhd/bcmsdh_linux.c
+diff --cc drivers/net/wireless/bcmdhd/bcmsdh_sdmmc.c
+index 0d42016,68d34c7..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmsdh_sdmmc.c
++++ b/drivers/net/wireless/bcmdhd/bcmsdh_sdmmc.c
+diff --cc drivers/net/wireless/bcmdhd/bcmsdh_sdmmc_linux.c
+index c3a5553,5238375..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmsdh_sdmmc_linux.c
++++ b/drivers/net/wireless/bcmdhd/bcmsdh_sdmmc_linux.c
+diff --cc drivers/net/wireless/bcmdhd/bcmsdspi_linux.c
+index 0f07869,3d74edc..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmsdspi_linux.c
++++ b/drivers/net/wireless/bcmdhd/bcmsdspi_linux.c
+diff --cc drivers/net/wireless/bcmdhd/bcmspibrcm.c
+index 64ad019,6de84f3..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmspibrcm.c
++++ b/drivers/net/wireless/bcmdhd/bcmspibrcm.c
+diff --cc drivers/net/wireless/bcmdhd/bcmutils.c
+index 3836eed,0394028..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmutils.c
++++ b/drivers/net/wireless/bcmdhd/bcmutils.c
+diff --cc drivers/net/wireless/bcmdhd/bcmwifi_channels.c
+index d54b452,97c1b6f..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmwifi_channels.c
++++ b/drivers/net/wireless/bcmdhd/bcmwifi_channels.c
+diff --cc drivers/net/wireless/bcmdhd/bcmwifi_channels.h
+index 08a0f8b,eeb0920..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmwifi_channels.h
++++ b/drivers/net/wireless/bcmdhd/bcmwifi_channels.h
+diff --cc drivers/net/wireless/bcmdhd/bcmwifi_rates.h
+index 079c99b,42b9b9e..0000000
+--- a/drivers/net/wireless/bcmdhd/bcmwifi_rates.h
++++ b/drivers/net/wireless/bcmdhd/bcmwifi_rates.h
+diff --cc drivers/net/wireless/bcmdhd/dhd.h
+index 721a514,c5578c2..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd.h
++++ b/drivers/net/wireless/bcmdhd/dhd.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_bta.c
+index e686135,c7dd657..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_bta.c
++++ b/drivers/net/wireless/bcmdhd/dhd_bta.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_bta.h
+index db636a8,73ccea1..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_bta.h
++++ b/drivers/net/wireless/bcmdhd/dhd_bta.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_bus.h
+index b0d96bf,5b922ef..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_bus.h
++++ b/drivers/net/wireless/bcmdhd/dhd_bus.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_cdc.c
+index 6d0f7fd,71a6449..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_cdc.c
++++ b/drivers/net/wireless/bcmdhd/dhd_cdc.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_cfg80211.c
+index 147760d,e4984c6..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_cfg80211.c
++++ b/drivers/net/wireless/bcmdhd/dhd_cfg80211.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_cfg80211.h
+index 74e2b80,c5c8c21..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_cfg80211.h
++++ b/drivers/net/wireless/bcmdhd/dhd_cfg80211.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_common.c
+index 39eec2a,90ff350..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_common.c
++++ b/drivers/net/wireless/bcmdhd/dhd_common.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_custom_gpio.c
+index 4f3f2c3,a5093a6..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_custom_gpio.c
++++ b/drivers/net/wireless/bcmdhd/dhd_custom_gpio.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_custom_sec.c
+index d57a42e,7a0571b..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_custom_sec.c
++++ b/drivers/net/wireless/bcmdhd/dhd_custom_sec.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_dbg.h
+index 63997a2,9e73ef0..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_dbg.h
++++ b/drivers/net/wireless/bcmdhd/dhd_dbg.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_ip.c
+index d0b0a0a,b4fb5e3..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_ip.c
++++ b/drivers/net/wireless/bcmdhd/dhd_ip.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_ip.h
+index 4d851d5,ceb3877..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_ip.h
++++ b/drivers/net/wireless/bcmdhd/dhd_ip.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_linux.c
+index a982d88,7799697..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_linux.c
++++ b/drivers/net/wireless/bcmdhd/dhd_linux.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_linux_sched.c
+index d9ffaf7,3486c7b..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_linux_sched.c
++++ b/drivers/net/wireless/bcmdhd/dhd_linux_sched.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_pno.c
+index aa735d5,3696a83..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_pno.c
++++ b/drivers/net/wireless/bcmdhd/dhd_pno.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_pno.h
+index 09e6614,769cdb9..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_pno.h
++++ b/drivers/net/wireless/bcmdhd/dhd_pno.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_proto.h
+index 227092c,9fb2052..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_proto.h
++++ b/drivers/net/wireless/bcmdhd/dhd_proto.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_sdio.c
+index 1b7bb87,6860ece..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_sdio.c
++++ b/drivers/net/wireless/bcmdhd/dhd_sdio.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_sec_feature.h
+index efda213,70ebed5..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_sec_feature.h
++++ b/drivers/net/wireless/bcmdhd/dhd_sec_feature.h
+diff --cc drivers/net/wireless/bcmdhd/dhd_wlfc.c
+index 043bd88,191ed30..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_wlfc.c
++++ b/drivers/net/wireless/bcmdhd/dhd_wlfc.c
+diff --cc drivers/net/wireless/bcmdhd/dhd_wlfc.h
+index a6f2bb7,dcc64ac..0000000
+--- a/drivers/net/wireless/bcmdhd/dhd_wlfc.h
++++ b/drivers/net/wireless/bcmdhd/dhd_wlfc.h
+diff --cc drivers/net/wireless/bcmdhd/dngl_stats.h
+index ac84522,0bc3b53..0000000
+--- a/drivers/net/wireless/bcmdhd/dngl_stats.h
++++ b/drivers/net/wireless/bcmdhd/dngl_stats.h
+diff --cc drivers/net/wireless/bcmdhd/dngl_wlhdr.h
+index 2c1366a,d5eda8c..0000000
+--- a/drivers/net/wireless/bcmdhd/dngl_wlhdr.h
++++ b/drivers/net/wireless/bcmdhd/dngl_wlhdr.h
+diff --cc drivers/net/wireless/bcmdhd/hndpmu.c
+index 855d786,e94fe80..0000000
+--- a/drivers/net/wireless/bcmdhd/hndpmu.c
++++ b/drivers/net/wireless/bcmdhd/hndpmu.c
+diff --cc drivers/net/wireless/bcmdhd/include/aidmp.h
+index 79498ab,55d823e..0000000
+--- a/drivers/net/wireless/bcmdhd/include/aidmp.h
++++ b/drivers/net/wireless/bcmdhd/include/aidmp.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcm_cfg.h
+index 2262394,9153cd9..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcm_cfg.h
++++ b/drivers/net/wireless/bcmdhd/include/bcm_cfg.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcm_mpool_pub.h
+index 2e36105,51a5de7..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcm_mpool_pub.h
++++ b/drivers/net/wireless/bcmdhd/include/bcm_mpool_pub.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmcdc.h
+index 9b013d3,999a008..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmcdc.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmcdc.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmdefs.h
+index f44ff40,c952093..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmdefs.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmdefs.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmdevs.h
+index 03fde6e,923098f..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmdevs.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmdevs.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmendian.h
+index bfb060c,6509698..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmendian.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmendian.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmnvram.h
+index 282e7c2,dbfc3b4..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmnvram.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmnvram.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmpcispi.h
+index 8ecb7c2,53bd7fc..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmpcispi.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmpcispi.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmperf.h
+index acebfa3,fad33ff..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmperf.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmperf.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmsdbus.h
+index 1da3781,3abf493..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmsdbus.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmsdbus.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmsdh.h
+index db49968,657a69e..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmsdh.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmsdh.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmsdh_sdmmc.h
+index 2c5a7a8,9e05969..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmsdh_sdmmc.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmsdh_sdmmc.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmsdpcm.h
+index 5d2d4cd,4ebe3d7..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmsdpcm.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmsdpcm.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmsdspi.h
+index b5a0caf,21792ab..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmsdspi.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmsdspi.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmsdstd.h
+index e6a9fad,0962856..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmsdstd.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmsdstd.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmspi.h
+index cf814ce,e81ea62..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmspi.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmspi.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmspibrcm.h
+index 0c86e6c,b014046..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmspibrcm.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmspibrcm.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmsrom_fmt.h
+index 02d77f8,aaf8a0a..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmsrom_fmt.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmsrom_fmt.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmsrom_tbl.h
+index 274e5ae,ad46257..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmsrom_tbl.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmsrom_tbl.h
+diff --cc drivers/net/wireless/bcmdhd/include/bcmutils.h
+index e411d5d,298ec19..0000000
+--- a/drivers/net/wireless/bcmdhd/include/bcmutils.h
++++ b/drivers/net/wireless/bcmdhd/include/bcmutils.h
+diff --cc drivers/net/wireless/bcmdhd/include/dbus.h
+index 1e7e97f,4458e74..0000000
+--- a/drivers/net/wireless/bcmdhd/include/dbus.h
++++ b/drivers/net/wireless/bcmdhd/include/dbus.h
+diff --cc drivers/net/wireless/bcmdhd/include/dhdioctl.h
+index fd25adf,08758e1..0000000
+--- a/drivers/net/wireless/bcmdhd/include/dhdioctl.h
++++ b/drivers/net/wireless/bcmdhd/include/dhdioctl.h
+diff --cc drivers/net/wireless/bcmdhd/include/epivers.h
+index 627ae98,dd810a8..0000000
+--- a/drivers/net/wireless/bcmdhd/include/epivers.h
++++ b/drivers/net/wireless/bcmdhd/include/epivers.h
+diff --cc drivers/net/wireless/bcmdhd/include/hndpmu.h
+index bc9e583,9ed9de2..0000000
+--- a/drivers/net/wireless/bcmdhd/include/hndpmu.h
++++ b/drivers/net/wireless/bcmdhd/include/hndpmu.h
+diff --cc drivers/net/wireless/bcmdhd/include/hndrte_armtrap.h
+index 70cfa91,875a693..0000000
+--- a/drivers/net/wireless/bcmdhd/include/hndrte_armtrap.h
++++ b/drivers/net/wireless/bcmdhd/include/hndrte_armtrap.h
+diff --cc drivers/net/wireless/bcmdhd/include/hndrte_cons.h
+index 6d826e6,4e42720..0000000
+--- a/drivers/net/wireless/bcmdhd/include/hndrte_cons.h
++++ b/drivers/net/wireless/bcmdhd/include/hndrte_cons.h
+diff --cc drivers/net/wireless/bcmdhd/include/hndsoc.h
+index 86e5c47,e259cc6..0000000
+--- a/drivers/net/wireless/bcmdhd/include/hndsoc.h
++++ b/drivers/net/wireless/bcmdhd/include/hndsoc.h
+diff --cc drivers/net/wireless/bcmdhd/include/linux_osl.h
+index 6955883,9918f62..0000000
+--- a/drivers/net/wireless/bcmdhd/include/linux_osl.h
++++ b/drivers/net/wireless/bcmdhd/include/linux_osl.h
+diff --cc drivers/net/wireless/bcmdhd/include/linuxver.h
+index d6f0690,f0b29f6..0000000
+--- a/drivers/net/wireless/bcmdhd/include/linuxver.h
++++ b/drivers/net/wireless/bcmdhd/include/linuxver.h
+diff --cc drivers/net/wireless/bcmdhd/include/miniopt.h
+index 73212a8,ba48da0..0000000
+--- a/drivers/net/wireless/bcmdhd/include/miniopt.h
++++ b/drivers/net/wireless/bcmdhd/include/miniopt.h
+diff --cc drivers/net/wireless/bcmdhd/include/msgtrace.h
+index c01676f,aa5261a..0000000
+--- a/drivers/net/wireless/bcmdhd/include/msgtrace.h
++++ b/drivers/net/wireless/bcmdhd/include/msgtrace.h
+diff --cc drivers/net/wireless/bcmdhd/include/osl.h
+index 0615b36,19f8274..0000000
+--- a/drivers/net/wireless/bcmdhd/include/osl.h
++++ b/drivers/net/wireless/bcmdhd/include/osl.h
+diff --cc drivers/net/wireless/bcmdhd/include/packed_section_end.h
+index c4d83e3,1b66837..0000000
+--- a/drivers/net/wireless/bcmdhd/include/packed_section_end.h
++++ b/drivers/net/wireless/bcmdhd/include/packed_section_end.h
+diff --cc drivers/net/wireless/bcmdhd/include/packed_section_start.h
+index c38a9c0,2b25925..0000000
+--- a/drivers/net/wireless/bcmdhd/include/packed_section_start.h
++++ b/drivers/net/wireless/bcmdhd/include/packed_section_start.h
+diff --cc drivers/net/wireless/bcmdhd/include/pcicfg.h
+index b772af3,63f4158..0000000
+--- a/drivers/net/wireless/bcmdhd/include/pcicfg.h
++++ b/drivers/net/wireless/bcmdhd/include/pcicfg.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/802.11.h
+index fc0411c,c998214..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/802.11.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/802.11.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/802.11_bta.h
+index 19d898b,ee7f959..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/802.11_bta.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/802.11_bta.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/802.11e.h
+index 33a8863,6f0114e..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/802.11e.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/802.11e.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/802.1d.h
+index 171897e,3324f7b..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/802.1d.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/802.1d.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/802.3.h
+index c6575bc,91dc342..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/802.3.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/802.3.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/bcmeth.h
+index 1f2dd91,d03bf7d..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/bcmeth.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/bcmeth.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/bcmevent.h
+index dabf2d7,cafbc1d..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/bcmevent.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/bcmevent.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/bcmip.h
+index c30f73d,e89bed9..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/bcmip.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/bcmip.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/bcmipv6.h
+index 9f4c08a,e5f10d1..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/bcmipv6.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/bcmipv6.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/bt_amp_hci.h
+index fc05ab1,d56b10b..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/bt_amp_hci.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/bt_amp_hci.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/ethernet.h
+index eeea916,a85fd65..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/ethernet.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/ethernet.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/p2p.h
+index 941abb2,adb3f30..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/p2p.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/p2p.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/sdspi.h
+index f84d0b8,6263f40..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/sdspi.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/sdspi.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/vlan.h
+index 2887ee5,8de1869..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/vlan.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/vlan.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/wpa.h
+index 3b8a4fb,3ceae2b..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/wpa.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/wpa.h
+diff --cc drivers/net/wireless/bcmdhd/include/proto/wps.h
+index 306d554,184220d..0000000
+--- a/drivers/net/wireless/bcmdhd/include/proto/wps.h
++++ b/drivers/net/wireless/bcmdhd/include/proto/wps.h
+diff --cc drivers/net/wireless/bcmdhd/include/sbchipc.h
+index 512fe1a,cfdfbd1..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sbchipc.h
++++ b/drivers/net/wireless/bcmdhd/include/sbchipc.h
+diff --cc drivers/net/wireless/bcmdhd/include/sbconfig.h
+index 59c71ac,6c5cffc..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sbconfig.h
++++ b/drivers/net/wireless/bcmdhd/include/sbconfig.h
+diff --cc drivers/net/wireless/bcmdhd/include/sbhnddma.h
+index dd05dcd,3c74668..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sbhnddma.h
++++ b/drivers/net/wireless/bcmdhd/include/sbhnddma.h
+diff --cc drivers/net/wireless/bcmdhd/include/sbpcmcia.h
+index 8b99a33,f834a4c..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sbpcmcia.h
++++ b/drivers/net/wireless/bcmdhd/include/sbpcmcia.h
+diff --cc drivers/net/wireless/bcmdhd/include/sbsdio.h
+index 3f8c700,51f46c4..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sbsdio.h
++++ b/drivers/net/wireless/bcmdhd/include/sbsdio.h
+diff --cc drivers/net/wireless/bcmdhd/include/sbsdpcmdev.h
+index ab3199b,f655eeb..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sbsdpcmdev.h
++++ b/drivers/net/wireless/bcmdhd/include/sbsdpcmdev.h
+diff --cc drivers/net/wireless/bcmdhd/include/sbsocram.h
+index 81ac5a8,30543c0..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sbsocram.h
++++ b/drivers/net/wireless/bcmdhd/include/sbsocram.h
+diff --cc drivers/net/wireless/bcmdhd/include/sdio.h
+index ef5cc28,0c0dc47..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sdio.h
++++ b/drivers/net/wireless/bcmdhd/include/sdio.h
+diff --cc drivers/net/wireless/bcmdhd/include/sdioh.h
+index f2bd9ae,80cef23..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sdioh.h
++++ b/drivers/net/wireless/bcmdhd/include/sdioh.h
+diff --cc drivers/net/wireless/bcmdhd/include/sdiovar.h
+index 3cb05fd,c2f274a..0000000
+--- a/drivers/net/wireless/bcmdhd/include/sdiovar.h
++++ b/drivers/net/wireless/bcmdhd/include/sdiovar.h
+diff --cc drivers/net/wireless/bcmdhd/include/siutils.h
+index ed2ba16,622f4bc..0000000
+--- a/drivers/net/wireless/bcmdhd/include/siutils.h
++++ b/drivers/net/wireless/bcmdhd/include/siutils.h
+diff --cc drivers/net/wireless/bcmdhd/include/spid.h
+index 4dc5191,c4d8493..0000000
+--- a/drivers/net/wireless/bcmdhd/include/spid.h
++++ b/drivers/net/wireless/bcmdhd/include/spid.h
+diff --cc drivers/net/wireless/bcmdhd/include/trxhdr.h
+index 6e55b15,84bd1ae..0000000
+--- a/drivers/net/wireless/bcmdhd/include/trxhdr.h
++++ b/drivers/net/wireless/bcmdhd/include/trxhdr.h
+diff --cc drivers/net/wireless/bcmdhd/include/typedefs.h
+index abded95,c928f32..0000000
+--- a/drivers/net/wireless/bcmdhd/include/typedefs.h
++++ b/drivers/net/wireless/bcmdhd/include/typedefs.h
+diff --cc drivers/net/wireless/bcmdhd/include/wlfc_proto.h
+index e416424,0f94ee2..0000000
+--- a/drivers/net/wireless/bcmdhd/include/wlfc_proto.h
++++ b/drivers/net/wireless/bcmdhd/include/wlfc_proto.h
+diff --cc drivers/net/wireless/bcmdhd/include/wlioctl.h
+index 2e6aa10,28d6f98..0000000
+--- a/drivers/net/wireless/bcmdhd/include/wlioctl.h
++++ b/drivers/net/wireless/bcmdhd/include/wlioctl.h
+diff --cc drivers/net/wireless/bcmdhd/linux_osl.c
+index 24c0bc5,d2f1f7d..0000000
+--- a/drivers/net/wireless/bcmdhd/linux_osl.c
++++ b/drivers/net/wireless/bcmdhd/linux_osl.c
+diff --cc drivers/net/wireless/bcmdhd/sbutils.c
+index 7015e05,a118ecb..0000000
+--- a/drivers/net/wireless/bcmdhd/sbutils.c
++++ b/drivers/net/wireless/bcmdhd/sbutils.c
+diff --cc drivers/net/wireless/bcmdhd/siutils.c
+index 6099b62,7f3562a..0000000
+--- a/drivers/net/wireless/bcmdhd/siutils.c
++++ b/drivers/net/wireless/bcmdhd/siutils.c
+diff --cc drivers/net/wireless/bcmdhd/siutils_priv.h
+index 786baa1,0d64429..0000000
+--- a/drivers/net/wireless/bcmdhd/siutils_priv.h
++++ b/drivers/net/wireless/bcmdhd/siutils_priv.h
+diff --cc drivers/net/wireless/bcmdhd/uamp_api.h
+index dde4e1c,31e0d4b..0000000
+--- a/drivers/net/wireless/bcmdhd/uamp_api.h
++++ b/drivers/net/wireless/bcmdhd/uamp_api.h
+diff --cc drivers/net/wireless/bcmdhd/wl_android.c
+index e6df97b,d2cb3a4..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_android.c
++++ b/drivers/net/wireless/bcmdhd/wl_android.c
+diff --cc drivers/net/wireless/bcmdhd/wl_android.h
+index b3d3f35,602f2da..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_android.h
++++ b/drivers/net/wireless/bcmdhd/wl_android.h
+diff --cc drivers/net/wireless/bcmdhd/wl_cfg80211.c
+index 686ec81,c5ffd9f..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_cfg80211.c
++++ b/drivers/net/wireless/bcmdhd/wl_cfg80211.c
+diff --cc drivers/net/wireless/bcmdhd/wl_cfg80211.h
+index f511f74,568135a..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_cfg80211.h
++++ b/drivers/net/wireless/bcmdhd/wl_cfg80211.h
+diff --cc drivers/net/wireless/bcmdhd/wl_cfgp2p.c
+index 42ad2e2,cd7a342..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_cfgp2p.c
++++ b/drivers/net/wireless/bcmdhd/wl_cfgp2p.c
+diff --cc drivers/net/wireless/bcmdhd/wl_cfgp2p.h
+index 71c2dc7,329699b..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_cfgp2p.h
++++ b/drivers/net/wireless/bcmdhd/wl_cfgp2p.h
+diff --cc drivers/net/wireless/bcmdhd/wl_dbg.h
+index a614e2f,c07ae30..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_dbg.h
++++ b/drivers/net/wireless/bcmdhd/wl_dbg.h
+diff --cc drivers/net/wireless/bcmdhd/wl_iw.c
+index 980a8a8,af0764f..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_iw.c
++++ b/drivers/net/wireless/bcmdhd/wl_iw.c
+diff --cc drivers/net/wireless/bcmdhd/wl_iw.h
+index 9b03fb1,a35e2cd..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_iw.h
++++ b/drivers/net/wireless/bcmdhd/wl_iw.h
+diff --cc drivers/net/wireless/bcmdhd/wl_linux_mon.c
+index dc0c528,117b0ab..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_linux_mon.c
++++ b/drivers/net/wireless/bcmdhd/wl_linux_mon.c
+diff --cc drivers/net/wireless/bcmdhd/wl_roam.c
+index a807d6b,6e92f53..0000000
+--- a/drivers/net/wireless/bcmdhd/wl_roam.c
++++ b/drivers/net/wireless/bcmdhd/wl_roam.c
+diff --cc drivers/net/wireless/bcmdhd/wldev_common.c
+index a4e703b,4e9389a..0000000
+--- a/drivers/net/wireless/bcmdhd/wldev_common.c
++++ b/drivers/net/wireless/bcmdhd/wldev_common.c
+diff --cc drivers/net/wireless/bcmdhd/wldev_common.h
+index 7981f49,ca87b3c..0000000
+--- a/drivers/net/wireless/bcmdhd/wldev_common.h
++++ b/drivers/net/wireless/bcmdhd/wldev_common.h
+diff --cc drivers/net/wireless/bcmdhd4354/dhd_custom_sec.c
+index 7d709e2,e2875b5..0000000
+--- a/drivers/net/wireless/bcmdhd4354/dhd_custom_sec.c
++++ b/drivers/net/wireless/bcmdhd4354/dhd_custom_sec.c
+diff --cc drivers/net/wireless/bcmdhd4354/dhd_sdio.c
+index 76750ae,233bb3f..0000000
+--- a/drivers/net/wireless/bcmdhd4354/dhd_sdio.c
++++ b/drivers/net/wireless/bcmdhd4354/dhd_sdio.c
+diff --cc drivers/net/wireless/bcmdhd4354/wl_cfg80211.c
+index bc528df,a1ab2e8..0000000
+--- a/drivers/net/wireless/bcmdhd4354/wl_cfg80211.c
++++ b/drivers/net/wireless/bcmdhd4354/wl_cfg80211.c
+diff --cc drivers/net/wireless/wcnss/wcnss_wlan.c
+index f130e23,38c70a3..0000000
+--- a/drivers/net/wireless/wcnss/wcnss_wlan.c
++++ b/drivers/net/wireless/wcnss/wcnss_wlan.c
+diff --cc drivers/nfc/nfc-nci.c
+index 99e17a6,c6192ed..0000000
+--- a/drivers/nfc/nfc-nci.c
++++ b/drivers/nfc/nfc-nci.c
+diff --cc drivers/of/base.c
+index 715aef2,8e55a07..0000000
+--- a/drivers/of/base.c
++++ b/drivers/of/base.c
+diff --cc drivers/of/of_batterydata.c
+index 3aa4de7,0fc2b5f..0000000
+--- a/drivers/of/of_batterydata.c
++++ b/drivers/of/of_batterydata.c
+diff --cc drivers/of/platform.c
+index 5f0ba94,9ccb993..0000000
+--- a/drivers/of/platform.c
++++ b/drivers/of/platform.c
+diff --cc drivers/platform/msm/Kconfig
+index 88e8d43,3a7e99b..0000000
+--- a/drivers/platform/msm/Kconfig
++++ b/drivers/platform/msm/Kconfig
+diff --cc drivers/platform/msm/avtimer.c
+index f513ceb,f9eb23b..0000000
+--- a/drivers/platform/msm/avtimer.c
++++ b/drivers/platform/msm/avtimer.c
+diff --cc drivers/platform/msm/ipa/ipa.c
+index 1ef1f1b,20603f5..0000000
+--- a/drivers/platform/msm/ipa/ipa.c
++++ b/drivers/platform/msm/ipa/ipa.c
+diff --cc drivers/platform/msm/ipa/ipa_nat.c
+index e2c344f,6ee16fb..0000000
+--- a/drivers/platform/msm/ipa/ipa_nat.c
++++ b/drivers/platform/msm/ipa/ipa_nat.c
+diff --cc drivers/platform/msm/ipa/teth_bridge.c
+index b3a6b17,d08ac64..0000000
+--- a/drivers/platform/msm/ipa/teth_bridge.c
++++ b/drivers/platform/msm/ipa/teth_bridge.c
+diff --cc drivers/platform/msm/qpnp-clkdiv.c
+index 18ff72a,696c84f..0000000
+--- a/drivers/platform/msm/qpnp-clkdiv.c
++++ b/drivers/platform/msm/qpnp-clkdiv.c
+diff --cc drivers/platform/msm/qpnp-power-on.c
+index ea4cbfb1,6d9f031..0000000
+--- a/drivers/platform/msm/qpnp-power-on.c
++++ b/drivers/platform/msm/qpnp-power-on.c
+diff --cc drivers/platform/msm/qpnp-pwm.c
+index 7d26bef,588afc6..0000000
+--- a/drivers/platform/msm/qpnp-pwm.c
++++ b/drivers/platform/msm/qpnp-pwm.c
+diff --cc drivers/platform/msm/sps/sps.c
+index 4f10cf8,55a5a2d..0000000
+--- a/drivers/platform/msm/sps/sps.c
++++ b/drivers/platform/msm/sps/sps.c
+diff --cc drivers/platform/msm/sps/sps_bam.c
+index bd4328a,ad5e241..0000000
+--- a/drivers/platform/msm/sps/sps_bam.c
++++ b/drivers/platform/msm/sps/sps_bam.c
+diff --cc drivers/platform/msm/sps/sps_bam.h
+index da5dafd,a20156b..0000000
+--- a/drivers/platform/msm/sps/sps_bam.h
++++ b/drivers/platform/msm/sps/sps_bam.h
+diff --cc drivers/platform/msm/sps/sps_rm.c
+index 7d7e1a6,d8c7a4d..0000000
+--- a/drivers/platform/msm/sps/sps_rm.c
++++ b/drivers/platform/msm/sps/sps_rm.c
+diff --cc drivers/power/power_supply_sysfs.c
+index 579da0e,5fc513d..0000000
+--- a/drivers/power/power_supply_sysfs.c
++++ b/drivers/power/power_supply_sysfs.c
+diff --cc drivers/power/qpnp-bms.c
+index 7ed4efa,dc58cd5..0000000
+--- a/drivers/power/qpnp-bms.c
++++ b/drivers/power/qpnp-bms.c
+diff --cc drivers/power/qpnp-charger.c
+index 411aebc,3561788..0000000
+--- a/drivers/power/qpnp-charger.c
++++ b/drivers/power/qpnp-charger.c
+diff --cc drivers/regulator/Kconfig
+index cd9309a,1389f2e..0000000
+--- a/drivers/regulator/Kconfig
++++ b/drivers/regulator/Kconfig
+diff --cc drivers/regulator/Makefile
+index 0d832c9,c5c4949..0000000
+--- a/drivers/regulator/Makefile
++++ b/drivers/regulator/Makefile
+diff --cc drivers/regulator/core.c
+index 25d8450,8eee796..0000000
+--- a/drivers/regulator/core.c
++++ b/drivers/regulator/core.c
+diff --cc drivers/regulator/onsemi-ncp6335d.c
+index 329ac46,3d4dd04..0000000
+--- a/drivers/regulator/onsemi-ncp6335d.c
++++ b/drivers/regulator/onsemi-ncp6335d.c
+diff --cc drivers/rtc/alarm-dev.c
+index a414fbc,4682e9c..0000000
+--- a/drivers/rtc/alarm-dev.c
++++ b/drivers/rtc/alarm-dev.c
+diff --cc drivers/rtc/alarm.c
+index 966240e,78996a5..0000000
+--- a/drivers/rtc/alarm.c
++++ b/drivers/rtc/alarm.c
+diff --cc drivers/rtc/interface.c
+index 556c4af,eb415bd..0000000
+--- a/drivers/rtc/interface.c
++++ b/drivers/rtc/interface.c
+diff --cc drivers/rtc/qpnp-rtc.c
+index 9fa4dbb,133ae20..0000000
+--- a/drivers/rtc/qpnp-rtc.c
++++ b/drivers/rtc/qpnp-rtc.c
+diff --cc drivers/rtc/rtc-sysfs.c
+index 3353b5b,380083c..0000000
+--- a/drivers/rtc/rtc-sysfs.c
++++ b/drivers/rtc/rtc-sysfs.c
+diff --cc drivers/scsi/libsas/sas_ata.c
+index 441d88a,c7f75c9..0000000
+--- a/drivers/scsi/libsas/sas_ata.c
++++ b/drivers/scsi/libsas/sas_ata.c
+diff --cc drivers/scsi/scsi.c
+index 07322ec,572383a..0000000
+--- a/drivers/scsi/scsi.c
++++ b/drivers/scsi/scsi.c
+diff --cc drivers/scsi/scsi_scan.c
+index 01b0374,c29d98b..0000000
+--- a/drivers/scsi/scsi_scan.c
++++ b/drivers/scsi/scsi_scan.c
+diff --cc drivers/scsi/scsi_sysfs.c
+index 04c2a27,89a1af1..0000000
+--- a/drivers/scsi/scsi_sysfs.c
++++ b/drivers/scsi/scsi_sysfs.c
+diff --cc drivers/scsi/sd.c
+index 6993f29,eb4c8ec..0000000
+--- a/drivers/scsi/sd.c
++++ b/drivers/scsi/sd.c
+diff --cc drivers/scsi/ufs/ufshcd.c
+index b743bd6,48959ab..0000000
+--- a/drivers/scsi/ufs/ufshcd.c
++++ b/drivers/scsi/ufs/ufshcd.c
+diff --cc drivers/sensorhub/stm32f/factory/gyro_mpu6500.c
+index 7bd2131,a7dcb4a..0000000
+--- a/drivers/sensorhub/stm32f/factory/gyro_mpu6500.c
++++ b/drivers/sensorhub/stm32f/factory/gyro_mpu6500.c
+diff --cc drivers/sensorhub/stm32f/factory/magnetic_yas532.c
+index c3929ca,d4208db..0000000
+--- a/drivers/sensorhub/stm32f/factory/magnetic_yas532.c
++++ b/drivers/sensorhub/stm32f/factory/magnetic_yas532.c
+diff --cc drivers/sensorhub/stm32f/factory/magnetic_yas532.h
+index 5dda5be,51b8313..0000000
+--- a/drivers/sensorhub/stm32f/factory/magnetic_yas532.h
++++ b/drivers/sensorhub/stm32f/factory/magnetic_yas532.h
+diff --cc drivers/sensorhub/stm32f/factory/prox_max88920.c
+index 39adb75,a3f36a9..0000000
+--- a/drivers/sensorhub/stm32f/factory/prox_max88920.c
++++ b/drivers/sensorhub/stm32f/factory/prox_max88920.c
+diff --cc drivers/sensorhub/stm32f/factory/temphumidity_shtc1.c
+index 6a1e06c,1d6c6ff..0000000
+--- a/drivers/sensorhub/stm32f/factory/temphumidity_shtc1.c
++++ b/drivers/sensorhub/stm32f/factory/temphumidity_shtc1.c
+diff --cc drivers/sensorhub/stm32f/ssp_firmware.c
+index 4d7dcf1,fe29429..0000000
+--- a/drivers/sensorhub/stm32f/ssp_firmware.c
++++ b/drivers/sensorhub/stm32f/ssp_firmware.c
+diff --cc drivers/sensorhub/stm32f/ssp_input.c
+index 5fc48b5,8cf47cb..0000000
+--- a/drivers/sensorhub/stm32f/ssp_input.c
++++ b/drivers/sensorhub/stm32f/ssp_input.c
+diff --cc drivers/sensorhub/stm32f/ssp_sysfs.c
+index b98a812,22f1de7..0000000
+--- a/drivers/sensorhub/stm32f/ssp_sysfs.c
++++ b/drivers/sensorhub/stm32f/ssp_sysfs.c
+diff --cc drivers/slimbus/slim-msm-ctrl.c
+index 6e7a815,c662a2b..0000000
+--- a/drivers/slimbus/slim-msm-ctrl.c
++++ b/drivers/slimbus/slim-msm-ctrl.c
+diff --cc drivers/slimbus/slim-msm-ngd.c
+index 67cf049,69987d9..0000000
+--- a/drivers/slimbus/slim-msm-ngd.c
++++ b/drivers/slimbus/slim-msm-ngd.c
+diff --cc drivers/slimbus/slim-msm.c
+index 1bf5afe,9a5d70b..0000000
+--- a/drivers/slimbus/slim-msm.c
++++ b/drivers/slimbus/slim-msm.c
+diff --cc drivers/slimbus/slim-msm.h
+index b5c41ed,bd02353..0000000
+--- a/drivers/slimbus/slim-msm.h
++++ b/drivers/slimbus/slim-msm.h
+diff --cc drivers/slimbus/slimbus.c
+index b074289,fecf5ec..0000000
+--- a/drivers/slimbus/slimbus.c
++++ b/drivers/slimbus/slimbus.c
+diff --cc drivers/spi/spi_qsd.c
+index 7576b5a,90072a6..0000000
+--- a/drivers/spi/spi_qsd.c
++++ b/drivers/spi/spi_qsd.c
+diff --cc drivers/spmi/spmi-dbgfs.c
+index 27df09333,b0a354b..0000000
+--- a/drivers/spmi/spmi-dbgfs.c
++++ b/drivers/spmi/spmi-dbgfs.c
+diff --cc drivers/spmi/spmi-pmic-arb.c
+index bc328e0,e3284d5..0000000
+--- a/drivers/spmi/spmi-pmic-arb.c
++++ b/drivers/spmi/spmi-pmic-arb.c
+diff --cc drivers/spmi/spmi.c
+index 69cd881,84f4b9b..0000000
+--- a/drivers/spmi/spmi.c
++++ b/drivers/spmi/spmi.c
+diff --cc drivers/staging/android/ashmem.c
+index 16c411c,41ebc1c..0000000
+--- a/drivers/staging/android/ashmem.c
++++ b/drivers/staging/android/ashmem.c
+diff --cc drivers/staging/android/binder.c
+index b260efd,c294fe3..0000000
+--- a/drivers/staging/android/binder.c
++++ b/drivers/staging/android/binder.c
+diff --cc drivers/staging/iio/industrialio-buffer.c
+index d770fae,386ba76..0000000
+--- a/drivers/staging/iio/industrialio-buffer.c
++++ b/drivers/staging/iio/industrialio-buffer.c
+diff --cc drivers/thermal/Makefile
+index 01dce2d,0d17026..0000000
+--- a/drivers/thermal/Makefile
++++ b/drivers/thermal/Makefile
+diff --cc drivers/thermal/msm_thermal.c
+index ef971a8,9b86dcf..0000000
+--- a/drivers/thermal/msm_thermal.c
++++ b/drivers/thermal/msm_thermal.c
+diff --cc drivers/thermal/qpnp-adc-tm.c
+index cf1801b,efb87a9..0000000
+--- a/drivers/thermal/qpnp-adc-tm.c
++++ b/drivers/thermal/qpnp-adc-tm.c
+diff --cc drivers/thermal/thermal_sys.c
+index 739696d,21863e8..0000000
+--- a/drivers/thermal/thermal_sys.c
++++ b/drivers/thermal/thermal_sys.c
+diff --cc drivers/tty/n_tty.c
+index 91cae30,8eb5573..0000000
+--- a/drivers/tty/n_tty.c
++++ b/drivers/tty/n_tty.c
+@@@ -1999,9 -1999,7 +1999,13 @@@ static ssize_t n_tty_write(struct tty_s
+  				tty->ops->flush_chars(tty);
+  		} else {
+  			while (nr > 0) {
+++<<<<<<< HEAD
+ +				mutex_lock(&tty->output_lock);
+  				c = tty->ops->write(tty, b, nr);
+ +				mutex_unlock(&tty->output_lock);
+++=======
+++				c = tty->ops->write(tty, b, nr);
+++>>>>>>> FETCH_HEAD
+  				if (c < 0) {
+  					retval = c;
+  					goto break_out;
+diff --cc drivers/tty/serial/msm_serial_hs.c
+index 471b748,e1e01c2..0000000
+--- a/drivers/tty/serial/msm_serial_hs.c
++++ b/drivers/tty/serial/msm_serial_hs.c
+@@@ -67,14 -67,65 +67,75 @@@
+  #include <mach/sps.h>
+  #include <mach/msm_serial_hs.h>
+  #include <mach/msm_bus.h>
+++<<<<<<< HEAD
+ +
+++=======
++ #include <mach/msm_ipc_logging.h>
+++>>>>>>> FETCH_HEAD
+  #include "msm_serial_hs_hwreg.h"
+  #define UART_SPS_CONS_PERIPHERAL 0
+  #define UART_SPS_PROD_PERIPHERAL 1
+  
+++<<<<<<< HEAD
+ +static int hs_serial_debug_mask = 1;
+ +module_param_named(debug_mask, hs_serial_debug_mask,
+ +		   int, S_IRUGO | S_IWUSR | S_IWGRP);
+++=======
++ static void *ipc_msm_hs_log_ctxt;
++ #define IPC_MSM_HS_LOG_PAGES 5
++ 
++ /* If the debug_mask gets set to FATAL_LEV,
++  * a fatal error has happened and further IPC logging
++  * is disabled so that this problem can be detected
++  */
++ enum {
++ 	FATAL_LEV = 0U,
++ 	ERR_LEV = 1U,
++ 	WARN_LEV = 2U,
++ 	INFO_LEV = 3U,
++ 	DBG_LEV = 4U,
++ };
++ 
++ /* Default IPC log level INFO */
++ static int hs_serial_debug_mask = INFO_LEV;
++ module_param_named(debug_mask, hs_serial_debug_mask,
++ 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
++ 
++ #define MSM_HS_DBG(x...) do { \
++ 	if (hs_serial_debug_mask >= DBG_LEV) { \
++ 		pr_debug(x); \
++ 		if (ipc_msm_hs_log_ctxt) \
++ 			ipc_log_string(ipc_msm_hs_log_ctxt, x); \
++ 	} \
++ } while (0)
++ 
++ #define MSM_HS_INFO(x...) do { \
++ 	if (hs_serial_debug_mask >= INFO_LEV) {\
++ 		pr_info(x); \
++ 		if (ipc_msm_hs_log_ctxt) \
++ 			ipc_log_string(ipc_msm_hs_log_ctxt, x); \
++ 	} \
++ } while (0)
++ 
++ /* warnings and errors show up on console always */
++ #define MSM_HS_WARN(x...) do { \
++ 	pr_warn(x); \
++ 	if (ipc_msm_hs_log_ctxt && hs_serial_debug_mask >= WARN_LEV) \
++ 		ipc_log_string(ipc_msm_hs_log_ctxt, x); \
++ } while (0)
++ 
++ /* ERROR condition in the driver sets the hs_serial_debug_mask
++  * to ERR_FATAL level, so that this message can be seen
++  * in IPC logging. Further errors continue to log on the console
++  */
++ #define MSM_HS_ERR(x...) do { \
++ 	pr_err(x); \
++ 	if (ipc_msm_hs_log_ctxt && hs_serial_debug_mask >= ERR_LEV) { \
++ 		ipc_log_string(ipc_msm_hs_log_ctxt, x); \
++ 		hs_serial_debug_mask = FATAL_LEV; \
++ 	} \
++ } while (0)
+++>>>>>>> FETCH_HEAD
+  /*
+   * There are 3 different kind of UART Core available on MSM.
+   * High Speed UART (i.e. Legacy HSUART), GSBI based HSUART
+@@@ -331,19 -382,19 +392,31 @@@ static int msm_hs_ioctl(struct uart_por
+  
+  	switch (cmd) {
+  	case MSM_ENABLE_UART_CLOCK: {
+++<<<<<<< HEAD
+ +		pr_debug("%s():ENABLE UART CLOCK: cmd=%d\n", __func__, cmd);
+++=======
++ 		MSM_HS_DBG("%s():ENABLE UART CLOCK: cmd=%d\n", __func__, cmd);
+++>>>>>>> FETCH_HEAD
+  		msm_hs_request_clock_on(&msm_uport->uport);
+  		break;
+  	}
+  	case MSM_DISABLE_UART_CLOCK: {
+++<<<<<<< HEAD
+ +		pr_debug("%s():DISABLE UART CLOCK: cmd=%d\n", __func__, cmd);
+++=======
++ 		MSM_HS_DBG("%s():DISABLE UART CLOCK: cmd=%d\n", __func__, cmd);
+++>>>>>>> FETCH_HEAD
+  		msm_hs_request_clock_off(&msm_uport->uport);
+  		break;
+  	}
+  	case MSM_GET_UART_CLOCK_STATUS: {
+  		/* Return value 0 - UART CLOCK is OFF
+  		 * Return value 1 - UART CLOCK is ON */
+++<<<<<<< HEAD
+ +		pr_debug("%s():GET UART CLOCK STATUS: cmd=%d\n", __func__, cmd);
+++=======
++ 		MSM_HS_DBG("%s():GET UART CLOCK STATUS: cmd=%d\n", __func__, cmd);
+++>>>>>>> FETCH_HEAD
+  		spin_lock_irqsave(&msm_uport->uport.lock, flags);
+  		clk_state = msm_uport->clk_state;
+  		spin_unlock_irqrestore(&msm_uport->uport.lock, flags);
+@@@ -353,7 -404,7 +426,11 @@@
+  		break;
+  	}
+  	default: {
+++<<<<<<< HEAD
+ +		pr_debug("%s():Unknown cmd specified: cmd=%d\n", __func__, cmd);
+++=======
++ 		MSM_HS_DBG("%s():Unknown cmd specified: cmd=%d\n", __func__, cmd);
+++>>>>>>> FETCH_HEAD
+  		ret = -ENOIOCTLCMD;
+  		break;
+  	}
+@@@ -485,11 -536,11 +562,19 @@@ static void msm_hs_bus_voting(struct ms
+  	int ret;
+  
+  	if (is_blsp_uart(msm_uport) && msm_uport->bus_perf_client) {
+++<<<<<<< HEAD
+ +		pr_debug("Bus voting:%d\n", vote);
+ +		ret = msm_bus_scale_client_update_request(
+ +				msm_uport->bus_perf_client, vote);
+ +		if (ret)
+ +			pr_err("%s(): Failed for Bus voting: %d\n",
+++=======
++ 		MSM_HS_DBG("Bus voting:%d\n", vote);
++ 		ret = msm_bus_scale_client_update_request(
++ 				msm_uport->bus_perf_client, vote);
++ 		if (ret)
++ 			MSM_HS_ERR("%s(): Failed for Bus voting: %d\n",
+++>>>>>>> FETCH_HEAD
+  							__func__, vote);
+  	}
+  }
+@@@ -515,6 -566,56 +600,59 @@@ static inline void msm_hs_write(struct 
+  	writel_relaxed(value, uport->membase + offset);
+  }
+  
+++<<<<<<< HEAD
+++=======
++ static int sps_rx_disconnect(struct sps_pipe *sps_pipe_handler)
++ {
++ 	struct sps_connect config;
++ 	int ret;
++ 
++ 	ret = sps_get_config(sps_pipe_handler, &config);
++ 	if (ret) {
++ 		pr_err("%s: sps_get_config() failed ret %d\n", __func__, ret);
++ 		return ret;
++ 	}
++ 	config.options |= SPS_O_POLL;
++ 	ret = sps_set_config(sps_pipe_handler, &config);
++ 	if (ret) {
++ 		pr_err("%s: sps_set_config() failed ret %d\n", __func__, ret);
++ 		return ret;
++ 	}
++ 	return sps_disconnect(sps_pipe_handler);
++ }
++ 
++ static void hex_dump_ipc(char *prefix, char *string, int size)
++ {
++ 	char linebuf[512];
++ 
++ 	hex_dump_to_buffer(string, size, 16, 1, linebuf, sizeof(linebuf), 1);
++ 	MSM_HS_DBG("%s : %s", prefix, linebuf);
++ }
++ 
++ /*
++  * This API read and provides UART Core registers information.
++ */
++ static void dump_uart_hs_registers(struct msm_hs_port *msm_uport)
++ {
++ 	msm_hs_clock_vote(msm_uport);
++ 	MSM_HS_DBG("============= UART Registers ================\n");
++ 	MSM_HS_DBG("UART_DM_MR1:%x\n", msm_hs_read(&(msm_uport->uport),
++ 		UART_DM_MR1));
++ 	MSM_HS_DBG("UART_DM_MR2:%x\n", msm_hs_read(&(msm_uport->uport),
++ 		UART_DM_MR2));
++ 	MSM_HS_DBG("UART_DM_IPR:%x\n", msm_hs_read(&(msm_uport->uport),
++ 		UART_DM_IPR));
++ 	MSM_HS_DBG("UART_DM_RFWR:%x\n", msm_hs_read(&(msm_uport->uport),
++ 		UART_DM_RFWR));
++ 	MSM_HS_DBG("UART_DM_SR:%x\n", msm_hs_read(&(msm_uport->uport),
++ 		UART_DM_SR));
++ 	MSM_HS_DBG("UART_DM_IMR: %x\n", msm_hs_read(&(msm_uport->uport),
++ 		UART_DM_IMR));
++ 	MSM_HS_DBG("=============================================\n");
++ 	msm_hs_clock_unvote(msm_uport);
++ }
++ 
+++>>>>>>> FETCH_HEAD
+  static void msm_hs_release_port(struct uart_port *port)
+  {
+  	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(port);
+@@@ -641,7 -742,7 +779,11 @@@ static void __devinit msm_serial_debugf
+  						&loopback_enable_fops);
+  
+  	if (IS_ERR_OR_NULL(msm_uport->loopback_dir))
+++<<<<<<< HEAD
+ +		pr_err("%s(): Cannot create loopback.%d debug entry",
+++=======
++ 		MSM_HS_ERR("%s(): Cannot create loopback.%d debug entry",
+++>>>>>>> FETCH_HEAD
+  							__func__, id);
+  }
+  
+@@@ -652,7 -753,7 +794,11 @@@ static int __devexit msm_hs_remove(stru
+  	struct device *dev;
+  
+  	if (pdev->id < 0 || pdev->id >= UARTDM_NR) {
+++<<<<<<< HEAD
+ +		printk(KERN_ERR "Invalid plaform device ID = %d\n", pdev->id);
+++=======
++ 		MSM_HS_ERR(KERN_ERR "Invalid plaform device ID = %d\n", pdev->id);
+++>>>>>>> FETCH_HEAD
+  		return -EINVAL;
+  	}
+  
+@@@ -706,13 -807,13 +852,21 @@@ static int msm_hs_init_clk(struct uart_
+  	/* Set up the MREG/NREG/DREG/MNDREG */
+  	ret = clk_set_rate(msm_uport->clk, uport->uartclk);
+  	if (ret) {
+++<<<<<<< HEAD
+ +		printk(KERN_WARNING "Error setting clock rate on UART\n");
+++=======
++ 		MSM_HS_WARN("Error setting clock rate on UART\n");
+++>>>>>>> FETCH_HEAD
+  		return ret;
+  	}
+  
+  	ret = msm_hs_clock_vote(msm_uport);
+  	if (ret) {
+++<<<<<<< HEAD
+ +		printk(KERN_ERR "Error could not turn on UART clk\n");
+++=======
++ 		MSM_HS_ERR("Error could not turn on UART clk\n");
+++>>>>>>> FETCH_HEAD
+  		return ret;
+  	}
+  
+@@@ -743,14 -844,14 +897,22 @@@ static int msm_hs_spsconnect_tx(struct 
+  	/* Establish connection between peripheral and memory endpoint */
+  	ret = sps_connect(sps_pipe_handle, sps_config);
+  	if (ret) {
+++<<<<<<< HEAD
+ +		pr_err("msm_serial_hs: sps_connect() failed for tx!!\n"
+++=======
++ 		MSM_HS_ERR("msm_serial_hs: sps_connect() failed for tx!!\n"
+++>>>>>>> FETCH_HEAD
+  		"pipe_handle=0x%x ret=%d", (u32)sps_pipe_handle, ret);
+  		return ret;
+  	}
+  	/* Register callback event for EOT (End of transfer) event. */
+  	ret = sps_register_event(sps_pipe_handle, sps_event);
+  	if (ret) {
+++<<<<<<< HEAD
+ +		pr_err("msm_serial_hs: sps_connect() failed for tx!!\n"
+++=======
++ 		MSM_HS_ERR("msm_serial_hs: sps_connect() failed for tx!!\n"
+++>>>>>>> FETCH_HEAD
+  		"pipe_handle=0x%x ret=%d", (u32)sps_pipe_handle, ret);
+  		goto reg_event_err;
+  	}
+@@@ -784,14 -885,14 +946,22 @@@ static int msm_hs_spsconnect_rx(struct 
+  	/* Establish connection between peripheral and memory endpoint */
+  	ret = sps_connect(sps_pipe_handle, sps_config);
+  	if (ret) {
+++<<<<<<< HEAD
+ +		pr_err("msm_serial_hs: sps_connect() failed for rx!!\n"
+++=======
++ 		MSM_HS_ERR("msm_serial_hs: sps_connect() failed for rx!!\n"
+++>>>>>>> FETCH_HEAD
+  		"pipe_handle=0x%x ret=%d", (u32)sps_pipe_handle, ret);
+  		return ret;
+  	}
+  	/* Register callback event for DESC_DONE event. */
+  	ret = sps_register_event(sps_pipe_handle, sps_event);
+  	if (ret) {
+++<<<<<<< HEAD
+ +		pr_err("msm_serial_hs: sps_connect() failed for rx!!\n"
+++=======
++ 		MSM_HS_ERR("msm_serial_hs: sps_connect() failed for rx!!\n"
+++>>>>>>> FETCH_HEAD
+  		"pipe_handle=0x%x ret=%d", (u32)sps_pipe_handle, ret);
+  		goto reg_event_err;
+  	}
+@@@ -924,7 -1025,7 +1094,11 @@@ static void msm_hs_set_bps_locked(struc
+  	}
+  
+  	if (clk_set_rate(msm_uport->clk, uport->uartclk)) {
+++<<<<<<< HEAD
+ +		printk(KERN_WARNING "Error setting clock rate on UART\n");
+++=======
++ 		MSM_HS_WARN("Error setting clock rate on UART\n");
+++>>>>>>> FETCH_HEAD
+  		WARN_ON(1);
+  	}
+  
+@@@ -1016,6 -1117,9 +1190,12 @@@ static void msm_hs_set_termios(struct u
+  	mutex_lock(&msm_uport->clk_mutex);
+  	msm_hs_write(uport, UART_DM_IMR, 0);
+  
+++<<<<<<< HEAD
+++=======
++ 	MSM_HS_DBG("Entering %s\n", __func__);
++ 	dump_uart_hs_registers(msm_uport);
++ 
+++>>>>>>> FETCH_HEAD
+  	/* Clear the Rx Ready Ctl bit - This ensures that
+  	* flow control lines stop the other side from sending
+  	* data while we change the parameters
+@@@ -1124,11 -1228,9 +1304,17 @@@
+  				ret = wait_event_timeout(msm_uport->rx.wait,
+  					msm_uport->rx_bam_inprogress == false,
+  					RX_FLUSH_COMPLETE_TIMEOUT);
+++<<<<<<< HEAD
+ +			tasklet_kill(&msm_uport->tx.tlet);
+ +			tasklet_kill(&msm_uport->rx.tlet);
+ +			ret = sps_disconnect(sps_pipe_handle);
+ +			if (ret)
+ +				pr_err("%s(): sps_disconnect failed\n",
+++=======
++ 			ret = sps_rx_disconnect(sps_pipe_handle);
++ 			if (ret)
++ 				MSM_HS_ERR("%s(): sps_disconnect failed\n",
+++>>>>>>> FETCH_HEAD
+  							__func__);
+  			msm_hs_spsconnect_rx(uport);
+  			msm_serial_hs_rx_tlet((unsigned long) &rx->tlet);
+@@@ -1136,13 -1238,13 +1322,21 @@@
+  			msm_uport->rx_discard_flush_issued = true;
+  			/* do discard flush */
+  			msm_dmov_flush(msm_uport->dma_rx_channel, 0);
+++<<<<<<< HEAD
+ +			pr_debug("%s(): wainting for flush completion.\n",
+++=======
++ 			MSM_HS_DBG("%s(): wainting for flush completion.\n",
+++>>>>>>> FETCH_HEAD
+  								__func__);
+  			ret = wait_event_timeout(msm_uport->rx.wait,
+  				msm_uport->rx_discard_flush_issued == false,
+  				RX_FLUSH_COMPLETE_TIMEOUT);
+  			if (!ret)
+++<<<<<<< HEAD
+ +				pr_err("%s(): Discard flush pending.\n",
+++=======
++ 				MSM_HS_ERR("%s(): Discard flush pending.\n",
+++>>>>>>> FETCH_HEAD
+  								__func__);
+  		}
+  	}
+@@@ -1164,6 -1266,8 +1358,11 @@@
+  	msm_hs_write(uport, UART_DM_IMR, msm_uport->imr_reg);
+  	mb();
+  	mutex_unlock(&msm_uport->clk_mutex);
+++<<<<<<< HEAD
+++=======
++ 	MSM_HS_DBG("Exit %s\n", __func__);
++ 	dump_uart_hs_registers(msm_uport);
+++>>>>>>> FETCH_HEAD
+  }
+  
+  /*
+@@@ -1208,9 -1312,9 +1407,15 @@@ static void hsuart_disconnect_rx_endpoi
+  	struct sps_pipe *sps_pipe_handle = rx->prod.pipe_handle;
+  	int ret = 0;
+  
+++<<<<<<< HEAD
+ +	ret = sps_disconnect(sps_pipe_handle);
+ +	if (ret)
+ +		pr_err("%s(): sps_disconnect failed\n", __func__);
+++=======
++ 	ret = sps_rx_disconnect(sps_pipe_handle);
++ 	if (ret)
++ 		MSM_HS_ERR("%s(): sps_disconnect failed\n", __func__);
+++>>>>>>> FETCH_HEAD
+  
+  	wake_lock_timeout(&msm_uport->rx.wake_lock, HZ / 2);
+  	msm_uport->rx.flush = FLUSH_SHUTDOWN;
+@@@ -1290,7 -1394,8 +1495,12 @@@ static void msm_hs_submit_tx_locked(str
+  
+  	if (tx_count > left)
+  		tx_count = left;
+++<<<<<<< HEAD
+ +
+++=======
++ 	MSM_HS_DBG("%s(): [UART_TX]<%d>\n", __func__, tx_count);
++ 	hex_dump_ipc("HSUART write: ", &tx_buf->buf[tx_buf->tail], tx_count);
+++>>>>>>> FETCH_HEAD
+  	src_addr = tx->dma_base + tx_buf->tail;
+  
+  	if (pdev->id == 0 && tx_count == 4 && buff[0] == 0x1 && buff[1] == 0x3 && buff[2] == 0xc && buff[3] == 0x0) {
+@@@ -1343,7 -1448,10 +1553,14 @@@
+  			sizeof(u32), DMA_TO_DEVICE);
+  
+  		msm_dmov_enqueue_cmd(msm_uport->dma_tx_channel, &tx->xfer);
+++<<<<<<< HEAD
+++	}
+++=======
++ 
+  	}
++ 	MSM_HS_DBG("%s:Enqueue Tx Cmd\n", __func__);
++ 	dump_uart_hs_registers(msm_uport);
+++>>>>>>> FETCH_HEAD
+  }
+  
+  /* Start to receive the next chunk of data */
+@@@ -1358,7 -1466,7 +1575,11 @@@ static void msm_hs_start_rx_locked(stru
+  
+  	msm_uport->rx.buffer_pending = 0;
+  	if (buffer_pending && hs_serial_debug_mask)
+++<<<<<<< HEAD
+ +		printk(KERN_ERR "Error: rx started in buffer state = %x",
+++=======
++ 		MSM_HS_ERR("Error: rx started in buffer state = %x",
+++>>>>>>> FETCH_HEAD
+  		       buffer_pending);
+  
+  	msm_hs_write(uport, UART_DM_CR, RESET_STALE_INT);
+@@@ -1410,6 -1518,8 +1631,11 @@@
+  		msm_dmov_enqueue_cmd(msm_uport->dma_rx_channel,
+  				&msm_uport->rx.xfer);
+  	}
+++<<<<<<< HEAD
+++=======
++ 	MSM_HS_DBG("%s:Enqueue Rx Cmd\n", __func__);
++ 	dump_uart_hs_registers(msm_uport);
+++>>>>>>> FETCH_HEAD
+  }
+  
+  static void flip_insert_work(struct work_struct *work)
+@@@ -1424,7 -1534,7 +1650,11 @@@
+  	spin_lock_irqsave(&msm_uport->uport.lock, flags);
+  	if (msm_uport->rx.buffer_pending == NONE_PENDING) {
+  		if (hs_serial_debug_mask)
+++<<<<<<< HEAD
+ +			printk(KERN_ERR "Error: No buffer pending in %s",
+++=======
++ 			MSM_HS_ERR("Error: No buffer pending in %s",
+++>>>>>>> FETCH_HEAD
+  			       __func__);
+  		return;
+  	}
+@@@ -1456,11 -1566,7 +1686,15 @@@
+  	else
+  		if ((msm_uport->clk_state == MSM_HS_CLK_ON) &&
+  		    (msm_uport->rx.flush <= FLUSH_IGNORE)) {
+++<<<<<<< HEAD
+ +			if (hs_serial_debug_mask)
+ +				printk(KERN_WARNING
+ +				       "msm_serial_hs: "
+ +				       "Pending buffers cleared. "
+ +				       "Restarting\n");
+++=======
++ 		MSM_HS_WARN("Pending buffers cleared,restarting\n");
+++>>>>>>> FETCH_HEAD
+  			msm_hs_start_rx_locked(&msm_uport->uport);
+  		}
+  	spin_unlock_irqrestore(&msm_uport->uport.lock, flags);
+@@@ -1497,6 -1603,9 +1731,12 @@@ static void msm_serial_hs_rx_tlet(unsig
+  	if (!is_blsp_uart(msm_uport))
+  		msm_hs_write(uport, UART_DM_CR, STALE_EVENT_DISABLE);
+  
+++<<<<<<< HEAD
+++=======
++ 	MSM_HS_DBG("In %s\n", __func__);
++ 	dump_uart_hs_registers(msm_uport);
++ 
+++>>>>>>> FETCH_HEAD
+  	/* overflow is not connect to data in a FIFO */
+  	if (unlikely((status & UARTDM_SR_OVERRUN_BMSK) &&
+  		     (uport->read_status_mask & CREAD))) {
+@@@ -1513,7 -1622,7 +1753,11 @@@
+  	if (unlikely(status & UARTDM_SR_PAR_FRAME_BMSK)) {
+  		/* Can not tell difference between parity & frame error */
+  		if (hs_serial_debug_mask)
+++<<<<<<< HEAD
+ +			printk(KERN_WARNING "msm_serial_hs: parity error\n");
+++=======
++ 			MSM_HS_WARN("msm_serial_hs: parity error\n");
+++>>>>>>> FETCH_HEAD
+  		uport->icount.parity++;
+  		error_f = 1;
+  		if (!(uport->ignore_status_mask & IGNPAR)) {
+@@@ -1525,7 -1634,7 +1769,11 @@@
+  
+  	if (unlikely(status & UARTDM_SR_RX_BREAK_BMSK)) {
+  		if (hs_serial_debug_mask)
+++<<<<<<< HEAD
+ +			printk(KERN_WARNING "msm_serial_hs: Rx break\n");
+++=======
++ 			MSM_HS_WARN("msm_serial_hs: Rx break\n");
+++>>>>>>> FETCH_HEAD
+  		uport->icount.brk++;
+  		error_f = 1;
+  		if (!(uport->ignore_status_mask & IGNBRK)) {
+@@@ -1560,15 -1669,20 +1808,29 @@@
+  		rmb();
+  	}
+  
+++<<<<<<< HEAD
+++=======
++ 	MSM_HS_DBG("%s():[UART_RX]<%d>\n", __func__, rx_count);
++ 	hex_dump_ipc("HSUART Read: ", msm_uport->rx.buffer, rx_count);
+++>>>>>>> FETCH_HEAD
+  	if (0 != (uport->read_status_mask & CREAD)) {
+  		retval = tty_insert_flip_string(tty, msm_uport->rx.buffer,
+  						rx_count);
+  		if (retval != rx_count) {
+++<<<<<<< HEAD
+++=======
++ 			MSM_HS_DBG("%s(): retval %d rx_count %d", __func__,
++ 					retval, rx_count);
+++>>>>>>> FETCH_HEAD
+  			msm_uport->rx.buffer_pending |= CHARS_NORMAL |
+  				retval << 5 | (rx_count - retval) << 16;
+  		}
+  	}
+  
+++<<<<<<< HEAD
+++=======
++ 	MSM_HS_DBG("%s() read rx buffer complete", __func__);
+++>>>>>>> FETCH_HEAD
+  	/* order the read of rx.buffer and the start of next rx xfer */
+  	wmb();
+  
+@@@ -1588,11 -1702,7 +1850,15 @@@
+  	}
+  out:
+  	if (msm_uport->rx.buffer_pending) {
+++<<<<<<< HEAD
+ +		if (hs_serial_debug_mask)
+ +			printk(KERN_WARNING
+ +			       "msm_serial_hs: "
+ +			       "tty buffer exhausted. "
+ +			       "Stalling\n");
+++=======
++ 		MSM_HS_WARN("tty buffer exhausted.Stalling\n");
+++>>>>>>> FETCH_HEAD
+  		schedule_delayed_work(&msm_uport->rx.flip_insert_work
+  				      , msecs_to_jiffies(RETRY_TIMEOUT));
+  	}
+@@@ -1633,7 -1743,7 +1899,11 @@@ static void msm_hs_sps_tx_callback(stru
+  		((struct sps_event_notify *)notify)->user;
+  
+  	msm_uport->notify = *notify;
+++<<<<<<< HEAD
+ +	pr_debug("%s: sps ev_id=%d, addr=0x%x, size=0x%x, flags=0x%x\n",
+++=======
++ 	MSM_HS_DBG("%s: sps ev_id=%d, addr=0x%x, size=0x%x, flags=0x%x\n",
+++>>>>>>> FETCH_HEAD
+  		__func__, notify->event_id,
+  		notify->data.transfer.iovec.addr,
+  		notify->data.transfer.iovec.size,
+@@@ -1686,6 -1796,8 +1956,11 @@@ static void msm_serial_hs_tx_tlet(unsig
+  	mb();
+  
+  	spin_unlock_irqrestore(&(msm_uport->uport.lock), flags);
+++<<<<<<< HEAD
+++=======
++ 	MSM_HS_DBG("In %s()\n", __func__);
++ 	dump_uart_hs_registers(msm_uport);
+++>>>>>>> FETCH_HEAD
+  }
+  
+  /**
+@@@ -1708,7 -1820,7 +1983,11 @@@ static void msm_hs_sps_rx_callback(stru
+  
+  	uport = &(msm_uport->uport);
+  	msm_uport->notify = *notify;
+++<<<<<<< HEAD
+ +	pr_debug("%s: sps ev_id=%d, addr=0x%x, size=0x%x, flags=0x%x\n",
+++=======
++ 	MSM_HS_DBG("%s: sps ev_id=%d, addr=0x%x, size=0x%x, flags=0x%x\n",
+++>>>>>>> FETCH_HEAD
+  		__func__, notify->event_id,
+  		notify->data.transfer.iovec.addr,
+  		notify->data.transfer.iovec.size,
+@@@ -1740,7 -1852,7 +2019,11 @@@ static void msm_hs_dmov_rx_callback(str
+  	msm_uport = container_of(cmd_ptr, struct msm_hs_port, rx.xfer);
+  	uport = &(msm_uport->uport);
+  
+++<<<<<<< HEAD
+ +	pr_debug("%s(): called result:%x\n", __func__, result);
+++=======
++ 	MSM_HS_DBG("%s(): called result:%x\n", __func__, result);
+++>>>>>>> FETCH_HEAD
+  	if (!(result & DMOV_RSLT_ERROR)) {
+  		if (result & DMOV_RSLT_FLUSH) {
+  			if (msm_uport->rx_discard_flush_issued) {
+@@@ -1976,13 -2088,13 +2259,21 @@@ static int msm_hs_check_clock_off(struc
+  
+  		spin_unlock_irqrestore(&uport->lock, flags);
+  		if (msm_uport->rx_discard_flush_issued) {
+++<<<<<<< HEAD
+ +			pr_debug("%s(): wainting for flush completion.\n",
+++=======
++ 			MSM_HS_DBG("%s(): wainting for flush completion.\n",
+++>>>>>>> FETCH_HEAD
+  								__func__);
+  			ret = wait_event_timeout(msm_uport->rx.wait,
+  				msm_uport->rx_discard_flush_issued == false,
+  				RX_FLUSH_COMPLETE_TIMEOUT);
+  			if (!ret)
+++<<<<<<< HEAD
+ +				pr_err("%s(): Flush complete pending.\n",
+++=======
++ 				MSM_HS_ERR("%s(): Flush complete pending.\n",
+++>>>>>>> FETCH_HEAD
+  								__func__);
+  		}
+  
+@@@ -2053,10 -2165,13 +2344,19 @@@ static irqreturn_t msm_hs_isr(int irq, 
+  	spin_lock_irqsave(&uport->lock, flags);
+  
+  	isr_status = msm_hs_read(uport, UART_DM_MISR);
+++<<<<<<< HEAD
+++=======
++ 	MSM_HS_DBG("%s:UART_DM_MISR %lx", __func__, isr_status);
++ 	dump_uart_hs_registers(msm_uport);
+++>>>>>>> FETCH_HEAD
+  
+  	/* Uart RX starting */
+  	if (isr_status & UARTDM_ISR_RXLEV_BMSK) {
+  		wake_lock(&rx->wake_lock);  /* hold wakelock while rx dma */
+++<<<<<<< HEAD
+++=======
++ 		MSM_HS_DBG("%s:UARTDM_ISR_RXLEV_BMSK\n", __func__);
+++>>>>>>> FETCH_HEAD
+  		msm_uport->imr_reg &= ~UARTDM_ISR_RXLEV_BMSK;
+  		msm_hs_write(uport, UART_DM_IMR, msm_uport->imr_reg);
+  		/* Complete device write for IMR. Hence mb() requires. */
+@@@ -2071,6 -2186,7 +2371,10 @@@
+  		 * mb() requires here.
+  		 */
+  		mb();
+++<<<<<<< HEAD
+++=======
++ 		MSM_HS_DBG("%s:Stal Interrupt\n", __func__);
+++>>>>>>> FETCH_HEAD
+  
+  		if (msm_uport->clk_req_off_state ==
+  					CLK_REQ_OFF_RXSTALE_ISSUED)
+@@@ -2084,6 -2200,7 +2388,10 @@@
+  	}
+  	/* tx ready interrupt */
+  	if (isr_status & UARTDM_ISR_TX_READY_BMSK) {
+++<<<<<<< HEAD
+++=======
++ 		MSM_HS_DBG("%s: ISR_TX_READY Interrupt\n", __func__);
+++>>>>>>> FETCH_HEAD
+  		/* Clear  TX Ready */
+  		msm_hs_write(uport, UART_DM_CR, CLEAR_TX_READY);
+  
+@@@ -2237,15 -2354,6 +2545,18 @@@ void msm_hs_request_clock_on(struct uar
+  }
+  EXPORT_SYMBOL(msm_hs_request_clock_on);
+  
+++<<<<<<< HEAD
+ +int msm_hs_get_clock_state(struct uart_port *uport)
+ +{
+ +	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
+ +
+ +	return (int)msm_uport->clk_state;
+ +}
+ +EXPORT_SYMBOL(msm_hs_get_clock_state);
+ +
+ +
+++=======
+++>>>>>>> FETCH_HEAD
+  static irqreturn_t msm_hs_wakeup_isr(int irq, void *dev)
+  {
+  	unsigned int wakeup = 0;
+@@@ -2310,7 -2418,7 +2621,11 @@@ static void msm_hs_unconfig_uart_gpios(
+  		if (gpio_is_valid(pdata->uart_rfr_gpio))
+  			gpio_free(pdata->uart_rfr_gpio);
+  	} else {
+++<<<<<<< HEAD
+ +		pr_err("Error:Pdata is NULL.\n");
+++=======
++ 		MSM_HS_ERR("Error:Pdata is NULL.\n");
+++>>>>>>> FETCH_HEAD
+  	}
+  }
+  
+@@@ -2330,7 -2438,7 +2645,11 @@@ static int msm_hs_config_uart_gpios(str
+  			ret = gpio_request(pdata->uart_tx_gpio,
+  							"UART_TX_GPIO");
+  			if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +				pr_err("gpio request failed for:%d\n",
+++=======
++ 				MSM_HS_ERR("gpio request failed for:%d\n",
+++>>>>>>> FETCH_HEAD
+  					pdata->uart_tx_gpio);
+  				goto exit_uart_config;
+  			}
+@@@ -2340,7 -2448,7 +2659,11 @@@
+  			ret = gpio_request(pdata->uart_rx_gpio,
+  							"UART_RX_GPIO");
+  			if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +				pr_err("gpio request failed for:%d\n",
+++=======
++ 				MSM_HS_ERR("gpio request failed for:%d\n",
+++>>>>>>> FETCH_HEAD
+  					pdata->uart_rx_gpio);
+  				goto uart_tx_unconfig;
+  			}
+@@@ -2350,7 -2458,7 +2673,11 @@@
+  			ret = gpio_request(pdata->uart_cts_gpio,
+  							"UART_CTS_GPIO");
+  			if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +				pr_err("gpio request failed for:%d\n",
+++=======
++ 				MSM_HS_ERR("gpio request failed for:%d\n",
+++>>>>>>> FETCH_HEAD
+  					pdata->uart_cts_gpio);
+  				goto uart_rx_unconfig;
+  			}
+@@@ -2360,13 -2468,13 +2687,21 @@@
+  			ret = gpio_request(pdata->uart_rfr_gpio,
+  							"UART_RFR_GPIO");
+  			if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +				pr_err("gpio request failed for:%d\n",
+++=======
++ 				MSM_HS_ERR("gpio request failed for:%d\n",
+++>>>>>>> FETCH_HEAD
+  					pdata->uart_rfr_gpio);
+  				goto uart_cts_unconfig;
+  			}
+  		}
+  	} else {
+++<<<<<<< HEAD
+ +		pr_err("Pdata is NULL.\n");
+++=======
++ 		MSM_HS_ERR("Pdata is NULL.\n");
+++>>>>>>> FETCH_HEAD
+  		ret = -EINVAL;
+  	}
+  	return ret;
+@@@ -2413,7 -2521,7 +2748,11 @@@ static int msm_hs_startup(struct uart_p
+  	/* turn on uart clk */
+  	ret = msm_hs_init_clk(uport);
+  	if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +		pr_err("Turning ON uartclk error\n");
+++=======
++ 		MSM_HS_ERR("Turning ON uartclk error\n");
+++>>>>>>> FETCH_HEAD
+  		wake_unlock(&msm_uport->dma_wake_lock);
+  		return ret;
+  	}
+@@@ -2421,7 -2529,7 +2760,11 @@@
+  	if (is_blsp_uart(msm_uport)) {
+  		ret = msm_hs_config_uart_gpios(uport);
+  		if (ret) {
+++<<<<<<< HEAD
+ +			pr_err("Uart GPIO request failed\n");
+++=======
++ 			MSM_HS_ERR("Uart GPIO request failed\n");
+++>>>>>>> FETCH_HEAD
+  			goto deinit_uart_clk;
+  		}
+  	} else {
+@@@ -2435,14 -2543,14 +2778,22 @@@
+  		/* SPS connect for TX */
+  		ret = msm_hs_spsconnect_tx(uport);
+  		if (ret) {
+++<<<<<<< HEAD
+ +			pr_err("msm_serial_hs: SPS connect failed for TX");
+++=======
++ 			MSM_HS_ERR("msm_serial_hs: SPS connect failed for TX");
+++>>>>>>> FETCH_HEAD
+  			goto unconfig_uart_gpios;
+  		}
+  
+  		/* SPS connect for RX */
+  		ret = msm_hs_spsconnect_rx(uport);
+  		if (ret) {
+++<<<<<<< HEAD
+ +			pr_err("msm_serial_hs: SPS connect failed for RX");
+++=======
++ 			MSM_HS_ERR("msm_serial_hs: SPS connect failed for RX");
+++>>>>>>> FETCH_HEAD
+  			goto sps_disconnect_tx;
+  		}
+  	}
+@@@ -2488,6 -2596,8 +2839,11 @@@
+  	/* Initialize the tx */
+  	tx->tx_ready_int_en = 0;
+  	tx->dma_in_flight = 0;
+++<<<<<<< HEAD
+++=======
++ 	msm_uport->tty_flush_receive = false;
++ 	MSM_HS_DBG("%s: Setting tty_flush_receive to false\n", __func__);
+++>>>>>>> FETCH_HEAD
+  
+  	if (!is_blsp_uart(msm_uport)) {
+  		tx->xfer.complete_func = msm_hs_dmov_tx_callback;
+@@@ -2520,7 -2630,7 +2876,11 @@@
+  	if (use_low_power_wakeup(msm_uport)) {
+  		ret = irq_set_irq_wake(msm_uport->wakeup.irq, 1);
+  		if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +			pr_err("%s():Err setting wakeup irq\n", __func__);
+++=======
++ 			MSM_HS_ERR("%s():Err setting wakeup irq\n", __func__);
+++>>>>>>> FETCH_HEAD
+  			goto sps_disconnect_rx;
+  		}
+  	}
+@@@ -2528,7 -2638,7 +2888,11 @@@
+  	ret = request_irq(uport->irq, msm_hs_isr, IRQF_TRIGGER_HIGH,
+  			  "msm_hs_uart", msm_uport);
+  	if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +		pr_err("%s():Error getting uart irq\n", __func__);
+++=======
++ 		MSM_HS_ERR("%s():Error getting uart irq\n", __func__);
+++>>>>>>> FETCH_HEAD
+  		goto free_wake_irq;
+  	}
+  	if (use_low_power_wakeup(msm_uport)) {
+@@@ -2539,7 -2649,7 +2903,11 @@@
+  					"msm_hs_wakeup", msm_uport);
+  
+  		if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +			pr_err("%s():Err getting uart wakeup_irq\n", __func__);
+++=======
++ 			MSM_HS_ERR("%s():Err getting uart wakeup_irq\n", __func__);
+++>>>>>>> FETCH_HEAD
+  			goto free_uart_irq;
+  		}
+  		disable_irq(msm_uport->wakeup.irq);
+@@@ -2605,14 -2715,14 +2973,22 @@@ static int uartdm_init_port(struct uart
+  	rx->pool = dma_pool_create("rx_buffer_pool", uport->dev,
+  				   UARTDM_RX_BUF_SIZE, 16, 0);
+  	if (!rx->pool) {
+++<<<<<<< HEAD
+ +		pr_err("%s(): cannot allocate rx_buffer_pool", __func__);
+++=======
++ 		MSM_HS_ERR("%s(): cannot allocate rx_buffer_pool", __func__);
+++>>>>>>> FETCH_HEAD
+  		ret = -ENOMEM;
+  		goto exit_tasket_init;
+  	}
+  
+  	rx->buffer = dma_pool_alloc(rx->pool, GFP_KERNEL, &rx->rbuffer);
+  	if (!rx->buffer) {
+++<<<<<<< HEAD
+ +		pr_err("%s(): cannot allocate rx->buffer", __func__);
+++=======
++ 		MSM_HS_ERR("%s(): cannot allocate rx->buffer", __func__);
+++>>>>>>> FETCH_HEAD
+  		ret = -ENOMEM;
+  		goto free_pool;
+  	}
+@@@ -2651,14 -2761,15 +3027,23 @@@
+  	/* Allocate the command pointer. Needs to be 64 bit aligned */
+  	rx->command_ptr = kmalloc(sizeof(dmov_box), GFP_KERNEL | __GFP_DMA);
+  	if (!rx->command_ptr) {
+++<<<<<<< HEAD
+ +		pr_err("%s(): cannot allocate rx->command_ptr", __func__);
+++=======
++ 		MSM_HS_ERR("%s(): cannot allocate rx->command_ptr", __func__);
+++>>>>>>> FETCH_HEAD
+  		ret = -ENOMEM;
+  		goto free_tx_command_ptr_ptr;
+  	}
+  
+  	rx->command_ptr_ptr = kmalloc(sizeof(u32), GFP_KERNEL | __GFP_DMA);
+  	if (!rx->command_ptr_ptr) {
+++<<<<<<< HEAD
+ +		pr_err("%s(): cannot allocate rx->command_ptr_ptr", __func__);
+++=======
++ 		MSM_HS_ERR("%s(): cannot allocate rx->command_ptr_ptr",
++ 			 __func__);
+++>>>>>>> FETCH_HEAD
+  		ret = -ENOMEM;
+  		goto free_rx_command_ptr;
+  	}
+@@@ -2726,7 -2837,7 +3111,11 @@@ struct msm_serial_hs_platform_dat
+  
+  	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+  	if (!pdata) {
+++<<<<<<< HEAD
+ +		pr_err("unable to allocate memory for platform data\n");
+++=======
++ 		MSM_HS_ERR("unable to allocate memory for platform data\n");
+++>>>>>>> FETCH_HEAD
+  		return ERR_PTR(-ENOMEM);
+  	}
+  
+@@@ -2734,25 -2845,25 +3123,41 @@@
+  	pdata->uart_tx_gpio = of_get_named_gpio(node,
+  					"qcom,tx-gpio", 0);
+  	if (pdata->uart_tx_gpio < 0)
+++<<<<<<< HEAD
+ +		pr_debug("uart_tx_gpio is not available\n");
+++=======
++ 		MSM_HS_DBG("uart_tx_gpio is not available\n");
+++>>>>>>> FETCH_HEAD
+  
+  	/* UART RX GPIO */
+  	pdata->uart_rx_gpio = of_get_named_gpio(node,
+  					"qcom,rx-gpio", 0);
+  	if (pdata->uart_rx_gpio < 0)
+++<<<<<<< HEAD
+ +		pr_debug("uart_rx_gpio is not available\n");
+++=======
++ 		MSM_HS_DBG("uart_rx_gpio is not available\n");
+++>>>>>>> FETCH_HEAD
+  
+  	/* UART CTS GPIO */
+  	pdata->uart_cts_gpio = of_get_named_gpio(node,
+  					"qcom,cts-gpio", 0);
+  	if (pdata->uart_cts_gpio < 0)
+++<<<<<<< HEAD
+ +		pr_debug("uart_cts_gpio is not available\n");
+++=======
++ 		MSM_HS_DBG("uart_cts_gpio is not available\n");
+++>>>>>>> FETCH_HEAD
+  
+  	/* UART RFR GPIO */
+  	pdata->uart_rfr_gpio = of_get_named_gpio(node,
+  					"qcom,rfr-gpio", 0);
+  	if (pdata->uart_rfr_gpio < 0)
+++<<<<<<< HEAD
+ +		pr_debug("uart_rfr_gpio is not available\n");
+++=======
++ 		MSM_HS_DBG("uart_rfr_gpio is not available\n");
+++>>>>>>> FETCH_HEAD
+  
+  	pdata->inject_rx_on_wakeup = of_property_read_bool(node,
+  				"qcom,inject-rx-on-wakeup");
+@@@ -2761,7 -2872,7 +3166,11 @@@
+  		ret = of_property_read_u32(node, "qcom,rx-char-to-inject",
+  						&rx_to_inject);
+  		if (ret < 0) {
+++<<<<<<< HEAD
+ +			pr_err("Error: Rx_char_to_inject not specified.\n");
+++=======
++ 			MSM_HS_ERR("Error: Rx_char_to_inject not specified.\n");
+++>>>>>>> FETCH_HEAD
+  			return ERR_PTR(ret);
+  		}
+  		pdata->rx_to_inject = (char)rx_to_inject;
+@@@ -2770,30 -2881,30 +3179,50 @@@
+  	ret = of_property_read_u32(node, "qcom,bam-tx-ep-pipe-index",
+  				&pdata->bam_tx_ep_pipe_index);
+  	if (ret < 0) {
+++<<<<<<< HEAD
+ +		pr_err("Error: Getting UART BAM TX EP Pipe Index.\n");
+++=======
++ 		MSM_HS_ERR("Error: Getting UART BAM TX EP Pipe Index.\n");
+++>>>>>>> FETCH_HEAD
+  		return ERR_PTR(ret);
+  	}
+  
+  	if (!(pdata->bam_tx_ep_pipe_index >= BAM_PIPE_MIN &&
+  		pdata->bam_tx_ep_pipe_index <= BAM_PIPE_MAX)) {
+++<<<<<<< HEAD
+ +		pr_err("Error: Invalid UART BAM TX EP Pipe Index.\n");
+++=======
++ 		MSM_HS_ERR("Error: Invalid UART BAM TX EP Pipe Index.\n");
+++>>>>>>> FETCH_HEAD
+  		return ERR_PTR(-EINVAL);
+  	}
+  
+  	ret = of_property_read_u32(node, "qcom,bam-rx-ep-pipe-index",
+  					&pdata->bam_rx_ep_pipe_index);
+  	if (ret < 0) {
+++<<<<<<< HEAD
+ +		pr_err("Error: Getting UART BAM RX EP Pipe Index.\n");
+++=======
++ 		MSM_HS_ERR("Error: Getting UART BAM RX EP Pipe Index.\n");
+++>>>>>>> FETCH_HEAD
+  		return ERR_PTR(ret);
+  	}
+  
+  	if (!(pdata->bam_rx_ep_pipe_index >= BAM_PIPE_MIN &&
+  		pdata->bam_rx_ep_pipe_index <= BAM_PIPE_MAX)) {
+++<<<<<<< HEAD
+ +		pr_err("Error: Invalid UART BAM RX EP Pipe Index.\n");
+ +		return ERR_PTR(-EINVAL);
+ +	}
+ +
+ +	pr_debug("tx_ep_pipe_index:%d rx_ep_pipe_index:%d\n"
+++=======
++ 		MSM_HS_ERR("Error: Invalid UART BAM RX EP Pipe Index.\n");
++ 		return ERR_PTR(-EINVAL);
++ 	}
++ 
++ 	MSM_HS_DBG("tx_ep_pipe_index:%d rx_ep_pipe_index:%d\n"
+++>>>>>>> FETCH_HEAD
+  		"tx_gpio:%d rx_gpio:%d rfr_gpio:%d cts_gpio:%d",
+  		pdata->bam_tx_ep_pipe_index, pdata->bam_rx_ep_pipe_index,
+  		pdata->uart_tx_gpio, pdata->uart_rx_gpio, pdata->uart_cts_gpio,
+@@@ -2849,7 -2960,7 +3278,11 @@@ static int msm_hs_sps_init_ep_conn(stru
+  	/* Allocate endpoint context */
+  	sps_pipe_handle = sps_alloc_endpoint();
+  	if (!sps_pipe_handle) {
+++<<<<<<< HEAD
+ +		pr_err("msm_serial_hs: sps_alloc_endpoint() failed!!\n"
+++=======
++ 		MSM_HS_ERR("msm_serial_hs: sps_alloc_endpoint() failed!!\n"
+++>>>>>>> FETCH_HEAD
+  			"is_producer=%d", is_producer);
+  		rc = -ENOMEM;
+  		goto out;
+@@@ -2858,7 -2969,7 +3291,11 @@@
+  	/* Get default connection configuration for an endpoint */
+  	rc = sps_get_config(sps_pipe_handle, sps_config);
+  	if (rc) {
+++<<<<<<< HEAD
+ +		pr_err("msm_serial_hs: sps_get_config() failed!!\n"
+++=======
++ 		MSM_HS_ERR("msm_serial_hs: sps_get_config() failed!!\n"
+++>>>>>>> FETCH_HEAD
+  		"pipe_handle=0x%x rc=%d", (u32)sps_pipe_handle, rc);
+  		goto get_config_err;
+  	}
+@@@ -2894,7 -3005,7 +3331,11 @@@
+  						GFP_KERNEL);
+  	if (!sps_config->desc.base) {
+  		rc = -ENOMEM;
+++<<<<<<< HEAD
+ +		pr_err("msm_serial_hs: dma_alloc_coherent() failed!!\n");
+++=======
++ 		MSM_HS_ERR("msm_serial_hs: dma_alloc_coherent() failed!!\n");
+++>>>>>>> FETCH_HEAD
+  		goto get_config_err;
+  	}
+  	memset(sps_config->desc.base, 0x00, sps_config->desc.size);
+@@@ -2913,7 -3024,7 +3354,11 @@@
+  
+  	/* Now save the sps pipe handle */
+  	ep->pipe_handle = sps_pipe_handle;
+++<<<<<<< HEAD
+ +	pr_debug("msm_serial_hs: success !! %s: pipe_handle=0x%x\n"
+++=======
++ 	MSM_HS_DBG("msm_serial_hs: success !! %s: pipe_handle=0x%x\n"
+++>>>>>>> FETCH_HEAD
+  		"desc_fifo.phys_base=0x%llx\n",
+  		is_producer ? "READ" : "WRITE",
+  		(u32) sps_pipe_handle, (u64) sps_config->desc.phys_base);
+@@@ -2957,18 -3068,18 +3402,31 @@@ static int msm_hs_sps_init(struct msm_h
+  		bam.irq = (u32)msm_uport->bam_irq;
+  		bam.manage = SPS_BAM_MGR_DEVICE_REMOTE;
+  
+++<<<<<<< HEAD
+ +		pr_debug("msm_serial_hs: bam physical base=0x%x\n",
+ +							(u32)bam.phys_addr);
+ +		pr_debug("msm_serial_hs: bam virtual base=0x%x\n",
+++=======
++ 		MSM_HS_DBG("msm_serial_hs: bam physical base=0x%x\n",
++ 							(u32)bam.phys_addr);
++ 		MSM_HS_DBG("msm_serial_hs: bam virtual base=0x%x\n",
+++>>>>>>> FETCH_HEAD
+  							(u32)bam.virt_addr);
+  
+  		/* Register UART Peripheral BAM device to SPS driver */
+  		rc = sps_register_bam_device(&bam, &bam_handle);
+  		if (rc) {
+++<<<<<<< HEAD
+ +			pr_err("msm_serial_hs: BAM device register failed\n");
+ +			return rc;
+ +		}
+ +		pr_info("msm_serial_hs: BAM device registered. bam_handle=0x%x",
+++=======
++ 			MSM_HS_ERR("msm_serial_hs: BAM device register failed\n");
++ 			return rc;
++ 		}
++ 		MSM_HS_INFO("msm_serial_hs: BAM device registered. bam_handle=0x%x",
+++>>>>>>> FETCH_HEAD
+  							msm_uport->bam_handle);
+  	}
+  	msm_uport->bam_handle = bam_handle;
+@@@ -2976,14 -3087,14 +3434,22 @@@
+  	rc = msm_hs_sps_init_ep_conn(msm_uport, &msm_uport->rx.prod,
+  				UART_SPS_PROD_PERIPHERAL);
+  	if (rc) {
+++<<<<<<< HEAD
+ +		pr_err("%s: Failed to Init Producer BAM-pipe", __func__);
+++=======
++ 		MSM_HS_ERR("%s: Failed to Init Producer BAM-pipe", __func__);
+++>>>>>>> FETCH_HEAD
+  		goto deregister_bam;
+  	}
+  
+  	rc = msm_hs_sps_init_ep_conn(msm_uport, &msm_uport->tx.cons,
+  				UART_SPS_CONS_PERIPHERAL);
+  	if (rc) {
+++<<<<<<< HEAD
+ +		pr_err("%s: Failed to Init Consumer BAM-pipe", __func__);
+++=======
++ 		MSM_HS_ERR("%s: Failed to Init Consumer BAM-pipe", __func__);
+++>>>>>>> FETCH_HEAD
+  		goto deinit_ep_conn_prod;
+  	}
+  	return 0;
+@@@ -3035,7 -3146,7 +3501,11 @@@ static int __devinit msm_hs_probe(struc
+  				if (deviceid[alias_num] == 0) {
+  					pdev->id = alias_num;
+  				} else {
+++<<<<<<< HEAD
+ +					pr_err("alias_num=%d already used\n",
+++=======
++ 					MSM_HS_ERR("alias_num=%d already used\n",
+++>>>>>>> FETCH_HEAD
+  								alias_num);
+  					return -EINVAL;
+  				}
+@@@ -3048,7 -3159,7 +3518,11 @@@
+  	}
+  
+  	if (pdev->id < 0 || pdev->id >= UARTDM_NR) {
+++<<<<<<< HEAD
+ +		pr_err("Invalid plaform device ID = %d\n", pdev->id);
+++=======
++ 		MSM_HS_ERR("Invalid plaform device ID = %d\n", pdev->id);
+++>>>>>>> FETCH_HEAD
+  		return -EINVAL;
+  	}
+  
+@@@ -3076,39 -3187,39 +3550,67 @@@
+  		wakeup_irqres = platform_get_irq_byname(pdev, "wakeup_irq");
+  
+  		if (!core_resource) {
+++<<<<<<< HEAD
+ +			pr_err("Invalid core HSUART Resources.\n");
+++=======
++ 			MSM_HS_ERR("Invalid core HSUART Resources.\n");
+++>>>>>>> FETCH_HEAD
+  			return -ENXIO;
+  		}
+  
+  		if (!bam_resource) {
+++<<<<<<< HEAD
+ +			pr_err("Invalid BAM HSUART Resources.\n");
+++=======
++ 			MSM_HS_ERR("Invalid BAM HSUART Resources.\n");
+++>>>>>>> FETCH_HEAD
+  			return -ENXIO;
+  		}
+  
+  		if (!core_irqres) {
+++<<<<<<< HEAD
+ +			pr_err("Invalid core irqres Resources.\n");
+ +			return -ENXIO;
+ +		}
+ +		if (!bam_irqres) {
+ +			pr_err("Invalid bam irqres Resources.\n");
+ +			return -ENXIO;
+ +		}
+ +		if (!wakeup_irqres)
+ +			pr_debug("Wakeup irq not specified.\n");
+++=======
++ 			MSM_HS_ERR("Invalid core irqres Resources.\n");
++ 			return -ENXIO;
++ 		}
++ 		if (!bam_irqres) {
++ 			MSM_HS_ERR("Invalid bam irqres Resources.\n");
++ 			return -ENXIO;
++ 		}
++ 		if (!wakeup_irqres)
++ 			MSM_HS_DBG("Wakeup irq not specified.\n");
+++>>>>>>> FETCH_HEAD
+  
+  		uport->mapbase = core_resource->start;
+  
+  		uport->membase = ioremap(uport->mapbase,
+  					resource_size(core_resource));
+  		if (unlikely(!uport->membase)) {
+++<<<<<<< HEAD
+ +			pr_err("UART Resource ioremap Failed.\n");
+++=======
++ 			MSM_HS_ERR("UART Resource ioremap Failed.\n");
+++>>>>>>> FETCH_HEAD
+  			return -ENOMEM;
+  		}
+  		msm_uport->bam_mem = bam_resource->start;
+  		msm_uport->bam_base = ioremap(msm_uport->bam_mem,
+  					resource_size(bam_resource));
+  		if (unlikely(!msm_uport->bam_base)) {
+++<<<<<<< HEAD
+ +			pr_err("UART BAM Resource ioremap Failed.\n");
+++=======
++ 			MSM_HS_ERR("UART BAM Resource ioremap Failed.\n");
+++>>>>>>> FETCH_HEAD
+  			iounmap(uport->membase);
+  			return -ENOMEM;
+  		}
+@@@ -3119,13 -3230,13 +3621,21 @@@
+  
+  		msm_uport->bus_scale_table = msm_bus_cl_get_pdata(pdev);
+  		if (!msm_uport->bus_scale_table) {
+++<<<<<<< HEAD
+ +			pr_err("BLSP UART: Bus scaling is disabled.\n");
+++=======
++ 			MSM_HS_ERR("BLSP UART: Bus scaling is disabled.\n");
+++>>>>>>> FETCH_HEAD
+  		} else {
+  			msm_uport->bus_perf_client =
+  				msm_bus_scale_register_client
+  					(msm_uport->bus_scale_table);
+  			if (IS_ERR(&msm_uport->bus_perf_client)) {
+++<<<<<<< HEAD
+ +				pr_err("%s(): Bus client register failed.\n",
+++=======
++ 				MSM_HS_ERR("%s(): Bus client register failed.\n",
+++>>>>>>> FETCH_HEAD
+  								__func__);
+  				ret = -EINVAL;
+  				goto unmap_memory;
+@@@ -3143,7 -3254,7 +3653,11 @@@
+  
+  		uport->irq = platform_get_irq(pdev, 0);
+  		if (unlikely((int)uport->irq < 0)) {
+++<<<<<<< HEAD
+ +			pr_err("UART IRQ Failed.\n");
+++=======
++ 			MSM_HS_ERR("UART IRQ Failed.\n");
+++>>>>>>> FETCH_HEAD
+  			iounmap(uport->membase);
+  			return -ENXIO;
+  		}
+@@@ -3217,14 -3328,14 +3731,22 @@@
+  
+  	ret = clk_set_rate(msm_uport->clk, uport->uartclk);
+  	if (ret) {
+++<<<<<<< HEAD
+ +		printk(KERN_WARNING "Error setting clock rate on UART\n");
+++=======
++ 		MSM_HS_WARN("Error setting clock rate on UART\n");
+++>>>>>>> FETCH_HEAD
+  		goto put_clk;
+  	}
+  
+  	msm_uport->hsuart_wq = alloc_workqueue("k_hsuart",
+  					WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
+  	if (!msm_uport->hsuart_wq) {
+++<<<<<<< HEAD
+ +		pr_err("%s(): Unable to create workqueue hsuart_wq\n",
+++=======
++ 		MSM_HS_ERR("%s(): Unable to create workqueue hsuart_wq\n",
+++>>>>>>> FETCH_HEAD
+  								__func__);
+  		ret =  -ENOMEM;
+  		goto put_clk;
+@@@ -3243,7 -3354,7 +3765,11 @@@
+  	if (is_blsp_uart(msm_uport)) {
+  		ret = msm_hs_sps_init(msm_uport);
+  		if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +			pr_err("SPS Initialization failed ! err=%d", ret);
+++=======
++ 			MSM_HS_ERR("SPS Initialization failed ! err=%d", ret);
+++>>>>>>> FETCH_HEAD
+  			goto destroy_mutex;
+  		}
+  	}
+@@@ -3316,28 -3427,33 +3842,52 @@@ static int __init msm_serial_hs_init(vo
+  	int ret;
+  	int i;
+  
+++<<<<<<< HEAD
+++=======
++ 	ipc_msm_hs_log_ctxt = ipc_log_context_create(IPC_MSM_HS_LOG_PAGES,
++ 							"msm_serial_hs");
++ 	if (!ipc_msm_hs_log_ctxt)
++ 		MSM_HS_WARN("%s: error creating logging context", __func__);
++ 
+++>>>>>>> FETCH_HEAD
+  	/* Init all UARTS as non-configured */
+  	for (i = 0; i < UARTDM_NR; i++)
+  		q_uart_port[i].uport.type = PORT_UNKNOWN;
+  
+  	ret = uart_register_driver(&msm_hs_driver);
+  	if (unlikely(ret)) {
+++<<<<<<< HEAD
+ +		printk(KERN_ERR "%s failed to load\n", __FUNCTION__);
+++=======
++ 		MSM_HS_WARN("%s failed to load\n", __func__);
+++>>>>>>> FETCH_HEAD
+  		return ret;
+  	}
+  	debug_base = debugfs_create_dir("msm_serial_hs", NULL);
+  	if (IS_ERR_OR_NULL(debug_base))
+++<<<<<<< HEAD
+ +		pr_info("msm_serial_hs: Cannot create debugfs dir\n");
+ +
+ +	ret = platform_driver_register(&msm_serial_hs_platform_driver);
+ +	if (ret) {
+ +		printk(KERN_ERR "%s failed to load\n", __FUNCTION__);
+++=======
++ 		MSM_HS_INFO("msm_serial_hs: Cannot create debugfs dir\n");
++ 
++ 	ret = platform_driver_register(&msm_serial_hs_platform_driver);
++ 	if (ret) {
++ 		MSM_HS_ERR("%s failed to load\n", __FUNCTION__);
+++>>>>>>> FETCH_HEAD
+  		debugfs_remove_recursive(debug_base);
+  		uart_unregister_driver(&msm_hs_driver);
+  		return ret;
+  	}
+  
+++<<<<<<< HEAD
+ +	printk(KERN_INFO "msm_serial_hs module loaded\n");
+++=======
++ 	MSM_HS_INFO("msm_serial_hs module loaded\n");
+++>>>>>>> FETCH_HEAD
+  	return ret;
+  }
+  
+@@@ -3380,12 -3496,12 +3930,20 @@@ static void msm_hs_shutdown(struct uart
+  			ret = wait_event_timeout(msm_uport->tx.wait,
+  				msm_uport->tx.flush == FLUSH_SHUTDOWN, 100);
+  			if (!ret)
+++<<<<<<< HEAD
+ +				pr_err("%s():HSUART TX Stalls.\n", __func__);
+++=======
++ 				MSM_HS_ERR("%s():HSUART TX Stalls.\n", __func__);
+++>>>>>>> FETCH_HEAD
+  		} else {
+  			/* BAM Disconnect for TX */
+  			ret = sps_disconnect(sps_pipe_handle);
+  			if (ret)
+++<<<<<<< HEAD
+ +				pr_err("%s(): sps_disconnect failed\n",
+++=======
++ 				MSM_HS_ERR("%s(): sps_disconnect failed\n",
+++>>>>>>> FETCH_HEAD
+  							__func__);
+  		}
+  	}
+@@@ -3442,7 -3558,7 +4000,11 @@@
+  
+  static void __exit msm_serial_hs_exit(void)
+  {
+++<<<<<<< HEAD
+ +	printk(KERN_INFO "msm_serial_hs module removed\n");
+++=======
++ 	MSM_HS_INFO("msm_serial_hs module removed\n");
+++>>>>>>> FETCH_HEAD
+  	debugfs_remove_recursive(debug_base);
+  	platform_driver_unregister(&msm_serial_hs_platform_driver);
+  	uart_unregister_driver(&msm_hs_driver);
+diff --cc drivers/tty/serial/msm_serial_hs_lite.c
+index 8e47320,ad583c7..0000000
+--- a/drivers/tty/serial/msm_serial_hs_lite.c
++++ b/drivers/tty/serial/msm_serial_hs_lite.c
+@@@ -66,15 -66,7 +66,19 @@@ enum uart_core_type 
+  	BLSP_HSUART,
+  };
+  
+++<<<<<<< HEAD
+ +#if defined(CONFIG_MACH_HLTEDCM)|| defined(CONFIG_MACH_HLTEKDI)
+ +#define CONFIG_DUMP_UART_PACKET_DISABLE 1
+ +#endif
+ +
+ +#if defined(CONFIG_DUMP_UART_PACKET_DISABLE)
+ +#define DUMP_UART_PACKET 0
+ +#else
+ +#define DUMP_UART_PACKET 1
+ +#endif
+++=======
++ #define DUMP_UART_PACKET 1
+++>>>>>>> FETCH_HEAD
+  #define FULL_DUMP_UART_PACKET 0
+  
+  #if DUMP_UART_PACKET
+@@@ -539,6 -531,10 +543,13 @@@ static void msm_hsl_start_tx(struct uar
+  {
+  	struct msm_hsl_port *msm_hsl_port = UART_TO_MSM(port);
+  
+++<<<<<<< HEAD
+++=======
++ 	if (port->suspended) {
++ 		pr_err("%s: System is in Suspend state\n", __func__);
++ 		return;
++ 	}
+++>>>>>>> FETCH_HEAD
+  	msm_hsl_port->imr |= UARTDM_ISR_TXLEV_BMSK;
+  	msm_hsl_write(port, msm_hsl_port->imr,
+  		regmap[msm_hsl_port->ver_id][UARTDM_IMR]);
+diff --cc drivers/uio/uio.c
+index a783d53,0470194..0000000
+--- a/drivers/uio/uio.c
++++ b/drivers/uio/uio.c
+@@@ -640,38 -640,58 +640,89 @@@ static int uio_vma_fault(struct vm_area
+  	return 0;
+  }
+  
+++<<<<<<< HEAD
+ +static const struct vm_operations_struct uio_vm_ops = {
+++=======
++ static const struct vm_operations_struct uio_logical_vm_ops = {
+++>>>>>>> FETCH_HEAD
+  	.open = uio_vma_open,
+  	.close = uio_vma_close,
+  	.fault = uio_vma_fault,
+  };
+  
+++<<<<<<< HEAD
+++=======
++ static int uio_mmap_logical(struct vm_area_struct *vma)
++ {
++ 	vma->vm_flags |= VM_DONTEXPAND | VM_NODUMP;
++ 	vma->vm_ops = &uio_logical_vm_ops;
++ 	uio_vma_open(vma);
++ 	return 0;
++ }
++ 
++ static const struct vm_operations_struct uio_physical_vm_ops = {
++ #ifdef CONFIG_HAVE_IOREMAP_PROT
++ 	.access = generic_access_phys,
++ #endif
++ };
++ 
+++>>>>>>> FETCH_HEAD
+  static int uio_mmap_physical(struct vm_area_struct *vma)
+  {
+  	struct uio_device *idev = vma->vm_private_data;
+  	int mi = uio_find_mem_index(vma);
+++<<<<<<< HEAD
+ +	if (mi < 0)
+ +		return -EINVAL;
+ +
+ +	vma->vm_flags |= VM_IO | VM_RESERVED;
+ +
+ +	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+ +
+ +	return remap_pfn_range(vma,
+ +			       vma->vm_start,
+ +			       idev->info->mem[mi].addr >> PAGE_SHIFT,
+++=======
++ 	struct uio_mem *mem;
++ 	if (mi < 0)
++ 		return -EINVAL;
++ 	mem = idev->info->mem + mi;
++ 
++ 	if (vma->vm_end - vma->vm_start > mem->size)
++ 		return -EINVAL;
++ 
++ 	vma->vm_ops = &uio_physical_vm_ops;
++ 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
++ 
++ 	/*
++ 	 * We cannot use the vm_iomap_memory() helper here,
++ 	 * because vma->vm_pgoff is the map index we looked
++ 	 * up above in uio_find_mem_index(), rather than an
++ 	 * actual page offset into the mmap.
++ 	 *
++ 	 * So we just do the physical mmap without a page
++ 	 * offset.
++ 	 */
++ 
++ 	return remap_pfn_range(vma,
++ 			       vma->vm_start,
++ 			       mem->addr >> PAGE_SHIFT,
+++>>>>>>> FETCH_HEAD
+  			       vma->vm_end - vma->vm_start,
+  			       vma->vm_page_prot);
+  }
+  
+++<<<<<<< HEAD
+ +static int uio_mmap_logical(struct vm_area_struct *vma)
+ +{
+ +	vma->vm_flags |= VM_RESERVED;
+ +	vma->vm_ops = &uio_vm_ops;
+ +	uio_vma_open(vma);
+ +	return 0;
+ +}
+ +
+++=======
+++>>>>>>> FETCH_HEAD
+  static int uio_mmap(struct file *filep, struct vm_area_struct *vma)
+  {
+  	struct uio_listener *listener = filep->private_data;
+diff --cc drivers/usb/class/Kconfig
+index 2519e32,f7321e5..0000000
+--- a/drivers/usb/class/Kconfig
++++ b/drivers/usb/class/Kconfig
+diff --cc drivers/usb/class/Makefile
+index 32e8527,c2ee6f3..0000000
+--- a/drivers/usb/class/Makefile
++++ b/drivers/usb/class/Makefile
+diff --cc drivers/usb/core/hub.c
+index b0479e7,6cc3b21..0000000
+--- a/drivers/usb/core/hub.c
++++ b/drivers/usb/core/hub.c
+diff --cc drivers/usb/dwc3/core.h
+index 499506b,da59f3e..0000000
+--- a/drivers/usb/dwc3/core.h
++++ b/drivers/usb/dwc3/core.h
+diff --cc drivers/usb/dwc3/debug.h
+index 4901f4b,57d27cd..0000000
+--- a/drivers/usb/dwc3/debug.h
++++ b/drivers/usb/dwc3/debug.h
+diff --cc drivers/usb/dwc3/debugfs.c
+index a2580fc,a192398..0000000
+--- a/drivers/usb/dwc3/debugfs.c
++++ b/drivers/usb/dwc3/debugfs.c
+diff --cc drivers/usb/dwc3/dwc3-msm.c
+index b208656,139ce5d..0000000
+--- a/drivers/usb/dwc3/dwc3-msm.c
++++ b/drivers/usb/dwc3/dwc3-msm.c
+diff --cc drivers/usb/dwc3/ep0.c
+index bb0b2fb,c07f18c..0000000
+--- a/drivers/usb/dwc3/ep0.c
++++ b/drivers/usb/dwc3/ep0.c
+diff --cc drivers/usb/dwc3/gadget.c
+index e346a16,685ac0b..0000000
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@@ -2970,13 -3006,7 +3006,7 @@@ int __devinit dwc3_gadget_init(struct d
+  	dev_set_name(&dwc->gadget.dev, "gadget");
+  
+  	dwc->gadget.ops			= &dwc3_gadget_ops;
+- #if defined(CONFIG_SEC_LT03_PROJECT) || defined(CONFIG_SEC_MONDRIAN_PROJECT)\
+- 	|| defined(CONFIG_SEC_KS01_PROJECT) || defined(CONFIG_SEC_PICASSO_PROJECT)\
+- 	|| defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)\
+- 	|| defined(CONFIG_SEC_KSPORTS_PROJECT) || defined(CONFIG_SEC_JACTIVE_PROJECT)\
+- 	|| defined(CONFIG_SEC_S_PROJECT) || defined(CONFIG_SEC_PATEK_PROJECT)\
+- 	|| defined(CONFIG_SEC_CHAGALL_PROJECT) || defined(CONFIG_SEC_KLIMT_PROJECT)\
+- 	|| defined(CONFIG_MACH_JS01LTEDCM)
+ -#if defined(CONFIG_SEC_LT03_PROJECT) || defined(CONFIG_SEC_MONDRIAN_PROJECT)
+++#if defined(CONFIG_SEC_LT03_PROJECT) || defined(CONFIG_SEC_MONDRIAN_PROJECT) || defined(CONFIG_MACH_JS01LTEDCM)
+  	dwc->gadget.max_speed		= USB_SPEED_HIGH;
+  #else
+  	dwc->gadget.max_speed		= USB_SPEED_SUPER;
+diff --cc drivers/usb/gadget/android.c
+index dadc046,deb8868..0000000
+--- a/drivers/usb/gadget/android.c
++++ b/drivers/usb/gadget/android.c
+@@@ -3204,13 -3204,7 +3204,7 @@@ static struct usb_composite_driver andr
+  	.dev		= &device_desc,
+  	.strings	= dev_strings,
+  	.unbind		= android_usb_unbind,
+- #if defined(CONFIG_SEC_LT03_PROJECT) || defined(CONFIG_SEC_MONDRIAN_PROJECT)\
+- 	|| defined(CONFIG_SEC_KS01_PROJECT) || defined(CONFIG_SEC_PICASSO_PROJECT)\
+- 	|| defined(CONFIG_SEC_KACTIVE_PROJECT) || defined(CONFIG_SEC_FRESCO_PROJECT)\
+- 	|| defined(CONFIG_SEC_KSPORTS_PROJECT) || defined(CONFIG_SEC_JACTIVE_PROJECT)\
+- 	|| defined(CONFIG_SEC_S_PROJECT) || defined(CONFIG_SEC_PATEK_PROJECT)\
+- 	|| defined(CONFIG_SEC_CHAGALL_PROJECT) || defined(CONFIG_SEC_KLIMT_PROJECT)\
+- 	|| defined(CONFIG_MACH_JS01LTEDCM)
+ -#if defined(CONFIG_SEC_LT03_PROJECT) || defined(CONFIG_SEC_MONDRIAN_PROJECT)
+++#if defined(CONFIG_SEC_LT03_PROJECT) || defined(CONFIG_SEC_MONDRIAN_PROJECT) || defined(CONFIG_MACH_JS01LTEDCM)
+  	.max_speed	= USB_SPEED_HIGH
+  #else
+  	.max_speed	= USB_SPEED_SUPER
+diff --cc drivers/usb/gadget/composite.c
+index 5ae9695,5c184c7..0000000
+--- a/drivers/usb/gadget/composite.c
++++ b/drivers/usb/gadget/composite.c
+diff --cc drivers/usb/gadget/f_mbim.c
+index 15f20ca,88a7bde..0000000
+--- a/drivers/usb/gadget/f_mbim.c
++++ b/drivers/usb/gadget/f_mbim.c
+diff --cc drivers/usb/gadget/f_mtp.c
+index 6d7dd3d,88ebd80..0000000
+--- a/drivers/usb/gadget/f_mtp.c
++++ b/drivers/usb/gadget/f_mtp.c
+diff --cc drivers/usb/gadget/f_qc_rndis.c
+index c1ab552,69f4b1c..0000000
+--- a/drivers/usb/gadget/f_qc_rndis.c
++++ b/drivers/usb/gadget/f_qc_rndis.c
+diff --cc drivers/usb/gadget/f_qdss.c
+index 7e474f3,4ecfeac..0000000
+--- a/drivers/usb/gadget/f_qdss.c
++++ b/drivers/usb/gadget/f_qdss.c
+diff --cc drivers/usb/gadget/f_uac1.c
+index e8c9667,883c5fa..0000000
+--- a/drivers/usb/gadget/f_uac1.c
++++ b/drivers/usb/gadget/f_uac1.c
+diff --cc drivers/usb/gadget/u_bam.c
+index 843c207,4bd7f39..0000000
+--- a/drivers/usb/gadget/u_bam.c
++++ b/drivers/usb/gadget/u_bam.c
+diff --cc drivers/usb/gadget/u_ether.c
+index d848f4c,01b4c16..0000000
+--- a/drivers/usb/gadget/u_ether.c
++++ b/drivers/usb/gadget/u_ether.c
+diff --cc drivers/usb/gadget/u_serial.c
+index 299f620c,95b6fbc7..0000000
+--- a/drivers/usb/gadget/u_serial.c
++++ b/drivers/usb/gadget/u_serial.c
+diff --cc drivers/usb/host/ehci-msm-hsic.c
+index 5f20ad1,a89ac06..0000000
+--- a/drivers/usb/host/ehci-msm-hsic.c
++++ b/drivers/usb/host/ehci-msm-hsic.c
+diff --cc drivers/usb/host/ehci-msm2.c
+index dd04f49,7ae0a54..0000000
+--- a/drivers/usb/host/ehci-msm2.c
++++ b/drivers/usb/host/ehci-msm2.c
+diff --cc drivers/usb/misc/diag_bridge.c
+index 4542e6a,eb4fb74..0000000
+--- a/drivers/usb/misc/diag_bridge.c
++++ b/drivers/usb/misc/diag_bridge.c
+diff --cc drivers/usb/misc/mdm_ctrl_bridge.c
+index 75fce2f,262b6c2..0000000
+--- a/drivers/usb/misc/mdm_ctrl_bridge.c
++++ b/drivers/usb/misc/mdm_ctrl_bridge.c
+diff --cc drivers/usb/otg/msm_otg.c
+index 9a84e33,3d308a5..0000000
+--- a/drivers/usb/otg/msm_otg.c
++++ b/drivers/usb/otg/msm_otg.c
+diff --cc drivers/usb/storage/scsiglue.c
+index a324a5d,669fca9..0000000
+--- a/drivers/usb/storage/scsiglue.c
++++ b/drivers/usb/storage/scsiglue.c
+diff --cc drivers/usb/storage/usb.c
+index fafa301,b275df9..0000000
+--- a/drivers/usb/storage/usb.c
++++ b/drivers/usb/storage/usb.c
+diff --cc drivers/usb/storage/usb.h
+index 75f70f0,db75080..0000000
+--- a/drivers/usb/storage/usb.h
++++ b/drivers/usb/storage/usb.h
+diff --cc drivers/video/au1100fb.c
+index ffbce45,1d8d91a..0000000
+--- a/drivers/video/au1100fb.c
++++ b/drivers/video/au1100fb.c
+diff --cc drivers/video/au1200fb.c
+index 7ca79f0,768f372..0000000
+--- a/drivers/video/au1200fb.c
++++ b/drivers/video/au1200fb.c
+diff --cc drivers/video/msm/mdss/Kconfig
+index 45a3329,b3b7d43..0000000
+--- a/drivers/video/msm/mdss/Kconfig
++++ b/drivers/video/msm/mdss/Kconfig
+diff --cc drivers/video/msm/mdss/LP8556-backlight.c
+index 55d68a1,55d68a1..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/LP8556-backlight.c
++++ b/drivers/video/msm/mdss/LP8556-backlight.c
+diff --cc drivers/video/msm/mdss/Makefile
+index 5fb677c,c353f48..0000000
+--- a/drivers/video/msm/mdss/Makefile
++++ b/drivers/video/msm/mdss/Makefile
+diff --cc drivers/video/msm/mdss/cabc_tuning.c
+index d6f8fe9,d6f8fe9..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/cabc_tuning.c
++++ b/drivers/video/msm/mdss/cabc_tuning.c
+diff --cc drivers/video/msm/mdss/cabc_tuning.h
+index 583acde,583acde..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/cabc_tuning.h
++++ b/drivers/video/msm/mdss/cabc_tuning.h
+diff --cc drivers/video/msm/mdss/cabc_tuning_data_mondrian.h
+index 823735d,823735d..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/cabc_tuning_data_mondrian.h
++++ b/drivers/video/msm/mdss/cabc_tuning_data_mondrian.h
+diff --cc drivers/video/msm/mdss/dsi_host_v2.c
+index 7d57f64,9266f07..0000000
+--- a/drivers/video/msm/mdss/dsi_host_v2.c
++++ b/drivers/video/msm/mdss/dsi_host_v2.c
+diff --cc drivers/video/msm/mdss/dsi_host_v2.h
+index cec9774,b297452..0000000
+--- a/drivers/video/msm/mdss/dsi_host_v2.h
++++ b/drivers/video/msm/mdss/dsi_host_v2.h
+diff --cc drivers/video/msm/mdss/dsi_v2.c
+index d0d9c57,8547a61..0000000
+--- a/drivers/video/msm/mdss/dsi_v2.c
++++ b/drivers/video/msm/mdss/dsi_v2.c
+diff --cc drivers/video/msm/mdss/edp-backlight.c
+index 867211e,867211e..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/edp-backlight.c
++++ b/drivers/video/msm/mdss/edp-backlight.c
+diff --cc drivers/video/msm/mdss/edp-eeprom.c
+index 5e7e7a3,5e7e7a3..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/edp-eeprom.c
++++ b/drivers/video/msm/mdss/edp-eeprom.c
+diff --cc drivers/video/msm/mdss/edp_tcon_mdnie.c
+index 76e0819,76e0819..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/edp_tcon_mdnie.c
++++ b/drivers/video/msm/mdss/edp_tcon_mdnie.c
+diff --cc drivers/video/msm/mdss/edp_tcon_mdnie.h
+index ac64d5a,ac64d5a..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/edp_tcon_mdnie.h
++++ b/drivers/video/msm/mdss/edp_tcon_mdnie.h
+diff --cc drivers/video/msm/mdss/logo.c
+index 712cde5,712cde5..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/logo.c
++++ b/drivers/video/msm/mdss/logo.c
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning.c
+index 0a29fed,e97d996..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning.c
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning.c
+@@@ -52,12 -54,12 +54,11 @@@
+  #elif defined(CONFIG_FB_MSM_MIPI_JDI_TFT_VIDEO_FULL_HD_PT_PANEL) // JA
+  #include "mdnie_lite_tuning_data_jactiveltexx.h"
+  #elif defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_WVGA_S6E88A0_PT_PANEL) // ?
+--#include "mdnie_lite_tuning_data_wvga_s6e88a0.h"
+ -#elif defined(CONFIG_MACH_JS01LTEDCM) || defined(CONFIG_MACH_JS01LTESBM) // JS01
+ -#include "mdnie_lite_tuning_data_js01.h"
+  */
+ +#elif defined(CONFIG_MACH_JS01LTEDCM) // JS01
+ +#include "mdnie_lite_tuning_data_js01.h"
+  #else
+ -#include "mdnie_lite_tuning_data.h"
+ +#include "mdnie_lite_tuning_data.h"	// KS01
+  #endif
+  
+  #if defined(CONFIG_TDMB)
+@@@ -145,9 -147,7 +146,8 @@@ const char accessibility_name[ACCESSIBI
+  	"ACCESSIBILITY_OFF",
+  	"NEGATIVE_MODE",
+  	"COLOR_BLIND_MODE",
+- #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL) || \
+- 	defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_FULL_HD_PT_PANEL) ||\
+ -#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL)
+++#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL) ||\
+ +	defined(CONFIG_MACH_JS01LTEDCM)
+  	"SCREEN_CURTAIN_MODE",
+  #endif
+  };
+@@@ -697,9 -697,7 +697,8 @@@ static ssize_t accessibility_store(stru
+  		memcpy(&COLOR_BLIND_2[MDNIE_COLOR_BLINDE_OFFSET],
+  				buffer, MDNIE_COLOR_BLINDE_CMD);
+  	}
+- #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL) || \
+- 	defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_FULL_HD_PT_PANEL) ||\
+ -#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL)
+++#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL)||\
+ +	defined(CONFIG_MACH_JS01LTEDCM)
+  	else if (cmd_value == SCREEN_CURTAIN) {
+  		mdnie_tun_state.accessibility = SCREEN_CURTAIN;
+  	}
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning.h
+index 2dbaa92,1668c20..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning.h
+@@@ -145,9 -145,7 +145,8 @@@ enum ACCESSIBILITY 
+      ACCESSIBILITY_OFF,
+  	NEGATIVE,
+  	COLOR_BLIND,
+- #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL) || \
+- 	defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_FULL_HD_PT_PANEL) ||\
+ -#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL)
+++#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQHD_PT_PANEL) ||\
+ +	defined(CONFIG_MACH_JS01LTEDCM)
+  	SCREEN_CURTAIN,
+  #endif
+  	ACCESSIBILITY_MAX,
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data.h
+index a574a6b,a574a6b..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data.h
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data_dmb.h
+index 52a4237,52a4237..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data_dmb.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data_dmb.h
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data_flte.h
+index f8a9fa0,f8a9fa0..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data_flte.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data_flte.h
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data_hlte.h
+index 75b21d5,0f1e6c1..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data_hlte.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data_hlte.h
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data_jactiveltexx.h
+index d07eaa0,d07eaa0..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data_jactiveltexx.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data_jactiveltexx.h
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data_js01.h
+index 4484fdb,51d4cb4..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data_js01.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data_js01.h
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data_klte_fhd_s6e3fa2.h
+index d2fc7a4,d2fc7a4..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data_klte_fhd_s6e3fa2.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data_klte_fhd_s6e3fa2.h
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data_klte_wqhd_s6e3ha0.h
+index b73d8fa,b73d8fa..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data_klte_wqhd_s6e3ha0.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data_klte_wqhd_s6e3ha0.h
+diff --cc drivers/video/msm/mdss/mdnie_lite_tuning_data_wvga_s6e88a0.h
+index b8ef947,b8ef947..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdnie_lite_tuning_data_wvga_s6e88a0.h
++++ b/drivers/video/msm/mdss/mdnie_lite_tuning_data_wvga_s6e88a0.h
+diff --cc drivers/video/msm/mdss/mdp3.c
+index 3999db9,52ffe21..0000000
+--- a/drivers/video/msm/mdss/mdp3.c
++++ b/drivers/video/msm/mdss/mdp3.c
+diff --cc drivers/video/msm/mdss/mdp3.h
+index 28997ec,a253d8f..0000000
+--- a/drivers/video/msm/mdss/mdp3.h
++++ b/drivers/video/msm/mdss/mdp3.h
+diff --cc drivers/video/msm/mdss/mdp3_ctrl.c
+index 6219737,9ac5f16..0000000
+--- a/drivers/video/msm/mdss/mdp3_ctrl.c
++++ b/drivers/video/msm/mdss/mdp3_ctrl.c
+diff --cc drivers/video/msm/mdss/mdp3_ctrl.h
+index f2484ef,416b7c2..0000000
+--- a/drivers/video/msm/mdss/mdp3_ctrl.h
++++ b/drivers/video/msm/mdss/mdp3_ctrl.h
+diff --cc drivers/video/msm/mdss/mdp3_dma.c
+index 3a2c94b,800c4b3..0000000
+--- a/drivers/video/msm/mdss/mdp3_dma.c
++++ b/drivers/video/msm/mdss/mdp3_dma.c
+diff --cc drivers/video/msm/mdss/mdp3_dma.h
+index 6983e55,207168f..0000000
+--- a/drivers/video/msm/mdss/mdp3_dma.h
++++ b/drivers/video/msm/mdss/mdp3_dma.h
+diff --cc drivers/video/msm/mdss/mdp3_hwio.h
+index b457c10,c40ee47..0000000
+--- a/drivers/video/msm/mdss/mdp3_hwio.h
++++ b/drivers/video/msm/mdss/mdp3_hwio.h
+diff --cc drivers/video/msm/mdss/mdp3_ppp.c
+index a64a6b4,8cc29da8..0000000
+--- a/drivers/video/msm/mdss/mdp3_ppp.c
++++ b/drivers/video/msm/mdss/mdp3_ppp.c
+diff --cc drivers/video/msm/mdss/mdss.h
+index 5b4711d,ca7f9dd..0000000
+--- a/drivers/video/msm/mdss/mdss.h
++++ b/drivers/video/msm/mdss/mdss.h
+diff --cc drivers/video/msm/mdss/mdss_dsi.c
+index 721c86f,3804d07..0000000
+--- a/drivers/video/msm/mdss/mdss_dsi.c
++++ b/drivers/video/msm/mdss/mdss_dsi.c
+diff --cc drivers/video/msm/mdss/mdss_dsi.h
+index 7b649fe,6aca399..0000000
+--- a/drivers/video/msm/mdss/mdss_dsi.h
++++ b/drivers/video/msm/mdss/mdss_dsi.h
+diff --cc drivers/video/msm/mdss/mdss_dsi_cmd.c
+index 4bdc611,0baf417..0000000
+--- a/drivers/video/msm/mdss/mdss_dsi_cmd.c
++++ b/drivers/video/msm/mdss/mdss_dsi_cmd.c
+diff --cc drivers/video/msm/mdss/mdss_dsi_host.c
+index b814ca8,4296121..0000000
+--- a/drivers/video/msm/mdss/mdss_dsi_host.c
++++ b/drivers/video/msm/mdss/mdss_dsi_host.c
+diff --cc drivers/video/msm/mdss/mdss_dsi_panel.c
+index b82870d,fbf5fd6..0000000
+--- a/drivers/video/msm/mdss/mdss_dsi_panel.c
++++ b/drivers/video/msm/mdss/mdss_dsi_panel.c
+diff --cc drivers/video/msm/mdss/mdss_dsi_status.c
+index f0c4f4c,fd7f3fd..0000000
+--- a/drivers/video/msm/mdss/mdss_dsi_status.c
++++ b/drivers/video/msm/mdss/mdss_dsi_status.c
+diff --cc drivers/video/msm/mdss/mdss_edp.c
+index 142977b,7d8bdb6..0000000
+--- a/drivers/video/msm/mdss/mdss_edp.c
++++ b/drivers/video/msm/mdss/mdss_edp.c
+diff --cc drivers/video/msm/mdss/mdss_edp.h
+index 117691f,4393bd3..0000000
+--- a/drivers/video/msm/mdss/mdss_edp.h
++++ b/drivers/video/msm/mdss/mdss_edp.h
+diff --cc drivers/video/msm/mdss/mdss_edp_aux.c
+index 829784d,82ee189..0000000
+--- a/drivers/video/msm/mdss/mdss_edp_aux.c
++++ b/drivers/video/msm/mdss/mdss_edp_aux.c
+diff --cc drivers/video/msm/mdss/mdss_fb.c
+index 309edba,6608221..0000000
+--- a/drivers/video/msm/mdss/mdss_fb.c
++++ b/drivers/video/msm/mdss/mdss_fb.c
+diff --cc drivers/video/msm/mdss/mdss_fb.h
+index 309704e,d0e1e48..0000000
+--- a/drivers/video/msm/mdss/mdss_fb.h
++++ b/drivers/video/msm/mdss/mdss_fb.h
+diff --cc drivers/video/msm/mdss/mdss_hdmi_cec.c
+index 410f2b3,9d85070..0000000
+--- a/drivers/video/msm/mdss/mdss_hdmi_cec.c
++++ b/drivers/video/msm/mdss/mdss_hdmi_cec.c
+diff --cc drivers/video/msm/mdss/mdss_hdmi_edid.c
+index 18edac5,c88dfcf..0000000
+--- a/drivers/video/msm/mdss/mdss_hdmi_edid.c
++++ b/drivers/video/msm/mdss/mdss_hdmi_edid.c
+diff --cc drivers/video/msm/mdss/mdss_hdmi_hdcp.c
+index 7db9e38,656f05c..0000000
+--- a/drivers/video/msm/mdss/mdss_hdmi_hdcp.c
++++ b/drivers/video/msm/mdss/mdss_hdmi_hdcp.c
+diff --cc drivers/video/msm/mdss/mdss_hdmi_tx.c
+index b1e94ee,d36a463..0000000
+--- a/drivers/video/msm/mdss/mdss_hdmi_tx.c
++++ b/drivers/video/msm/mdss/mdss_hdmi_tx.c
+diff --cc drivers/video/msm/mdss/mdss_hdmi_tx.h
+index 2378ace,9e047ec..0000000
+--- a/drivers/video/msm/mdss/mdss_hdmi_tx.h
++++ b/drivers/video/msm/mdss/mdss_hdmi_tx.h
+diff --cc drivers/video/msm/mdss/mdss_hdmi_util.c
+index 3056125,2345e36..0000000
+--- a/drivers/video/msm/mdss/mdss_hdmi_util.c
++++ b/drivers/video/msm/mdss/mdss_hdmi_util.c
+diff --cc drivers/video/msm/mdss/mdss_mdp.c
+index f5a2ded,bca9c5b..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp.c
++++ b/drivers/video/msm/mdss/mdss_mdp.c
+diff --cc drivers/video/msm/mdss/mdss_mdp.h
+index 5fdde66,926b99d..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp.h
++++ b/drivers/video/msm/mdss/mdss_mdp.h
+diff --cc drivers/video/msm/mdss/mdss_mdp_ctl.c
+index fc1d2a1,b686f98..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_ctl.c
++++ b/drivers/video/msm/mdss/mdss_mdp_ctl.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_formats.h
+index a2edf90,dcbff88..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_formats.h
++++ b/drivers/video/msm/mdss/mdss_mdp_formats.h
+diff --cc drivers/video/msm/mdss/mdss_mdp_hwio.h
+index e72e9a2,bff56d2..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_hwio.h
++++ b/drivers/video/msm/mdss/mdss_mdp_hwio.h
+diff --cc drivers/video/msm/mdss/mdss_mdp_intf_cmd.c
+index 1a3df2e,3d5be62..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_intf_cmd.c
++++ b/drivers/video/msm/mdss/mdss_mdp_intf_cmd.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_intf_video.c
+index c5e5a90,ae5e0ee..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_intf_video.c
++++ b/drivers/video/msm/mdss/mdss_mdp_intf_video.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_intf_writeback.c
+index ff55c57,4a33a01..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_intf_writeback.c
++++ b/drivers/video/msm/mdss/mdss_mdp_intf_writeback.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_overlay.c
+index 5ad0a30,17581fb..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_overlay.c
++++ b/drivers/video/msm/mdss/mdss_mdp_overlay.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_pipe.c
+index ed6924c,0b9e6c2..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_pipe.c
++++ b/drivers/video/msm/mdss/mdss_mdp_pipe.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_pp.c
+index 5d45d90,ac980bf..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_pp.c
++++ b/drivers/video/msm/mdss/mdss_mdp_pp.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_rotator.c
+index e2abfc2,180991d..0000000
+mode 100644,100755..100755
+--- a/drivers/video/msm/mdss/mdss_mdp_rotator.c
++++ b/drivers/video/msm/mdss/mdss_mdp_rotator.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_rotator.h
+index 7229995,a4ad8f7..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_rotator.h
++++ b/drivers/video/msm/mdss/mdss_mdp_rotator.h
+diff --cc drivers/video/msm/mdss/mdss_mdp_util.c
+index c3e1916,69506d4..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_util.c
++++ b/drivers/video/msm/mdss/mdss_mdp_util.c
+diff --cc drivers/video/msm/mdss/mdss_mdp_wb.c
+index 29fc64d,ad802ee..0000000
+--- a/drivers/video/msm/mdss/mdss_mdp_wb.c
++++ b/drivers/video/msm/mdss/mdss_mdp_wb.c
+diff --cc drivers/video/msm/mdss/mdss_millet_panel.h
+index 649574b,649574b..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_millet_panel.h
++++ b/drivers/video/msm/mdss/mdss_millet_panel.h
+diff --cc drivers/video/msm/mdss/mdss_msm_gpio_pwm.c
+index 53994fb,53994fb..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_msm_gpio_pwm.c
++++ b/drivers/video/msm/mdss/mdss_msm_gpio_pwm.c
+diff --cc drivers/video/msm/mdss/mdss_panel.h
+index 432980a,08db18f..0000000
+--- a/drivers/video/msm/mdss/mdss_panel.h
++++ b/drivers/video/msm/mdss/mdss_panel.h
+diff --cc drivers/video/msm/mdss/mdss_qpic.c
+index fa6bd3d,54b837a..0000000
+--- a/drivers/video/msm/mdss/mdss_qpic.c
++++ b/drivers/video/msm/mdss/mdss_qpic.c
+diff --cc drivers/video/msm/mdss/mdss_samsung_dsi_panel.c
+index 0ed3949,1594b37..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_samsung_dsi_panel.c
++++ b/drivers/video/msm/mdss/mdss_samsung_dsi_panel.c
+diff --cc drivers/video/msm/mdss/mdss_samsung_dsi_panel.h
+index 0294b52,0294b52..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_samsung_dsi_panel.h
++++ b/drivers/video/msm/mdss/mdss_samsung_dsi_panel.h
+diff --cc drivers/video/msm/mdss/mdss_samsung_oled_cmd_hd_wqhd_panel.c
+index ad08ee4,ad08ee4..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_samsung_oled_cmd_hd_wqhd_panel.c
++++ b/drivers/video/msm/mdss/mdss_samsung_oled_cmd_hd_wqhd_panel.c
+diff --cc drivers/video/msm/mdss/mdss_samsung_oled_cmd_hd_wqhd_panel.h
+index aa4105a,aa4105a..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_samsung_oled_cmd_hd_wqhd_panel.h
++++ b/drivers/video/msm/mdss/mdss_samsung_oled_cmd_hd_wqhd_panel.h
+diff --cc drivers/video/msm/mdss/mdss_samsung_tft_video_dual_dsi_panel.c
+index 8b0e470,8b0e470..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_samsung_tft_video_dual_dsi_panel.c
++++ b/drivers/video/msm/mdss/mdss_samsung_tft_video_dual_dsi_panel.c
+diff --cc drivers/video/msm/mdss/mdss_samsung_tft_video_dual_dsi_panel.h
+index 7ab64f0,7ab64f0..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_samsung_tft_video_dual_dsi_panel.h
++++ b/drivers/video/msm/mdss/mdss_samsung_tft_video_dual_dsi_panel.h
+diff --cc drivers/video/msm/mdss/mdss_sdc_wxga_dsi_panel.c
+index e81ac31,e81ac31..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_sdc_wxga_dsi_panel.c
++++ b/drivers/video/msm/mdss/mdss_sdc_wxga_dsi_panel.c
+diff --cc drivers/video/msm/mdss/mdss_tc358764_dsi2lvds.c
+index bf59de1,bf59de1..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/mdss_tc358764_dsi2lvds.c
++++ b/drivers/video/msm/mdss/mdss_tc358764_dsi2lvds.c
+diff --cc drivers/video/msm/mdss/mhl_sii8334.c
+index 74ea1b1,0255dc4..0000000
+--- a/drivers/video/msm/mdss/mhl_sii8334.c
++++ b/drivers/video/msm/mdss/mhl_sii8334.c
+diff --cc drivers/video/msm/mdss/msm_mdss_io_8974.c
+index 458646a,9185b01..0000000
+--- a/drivers/video/msm/mdss/msm_mdss_io_8974.c
++++ b/drivers/video/msm/mdss/msm_mdss_io_8974.c
+diff --cc drivers/video/msm/mdss/n1_edp_mdnie_data.h
+index 8b569c8,8b569c8..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/n1_edp_mdnie_data.h
++++ b/drivers/video/msm/mdss/n1_edp_mdnie_data.h
+diff --cc drivers/video/msm/mdss/n1_power_save.h
+index aeaabf5,aeaabf5..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/n1_power_save.h
++++ b/drivers/video/msm/mdss/n1_power_save.h
+diff --cc drivers/video/msm/mdss/picasso_edp_mdnie_data.h
+index 8b569c8,8b569c8..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/picasso_edp_mdnie_data.h
++++ b/drivers/video/msm/mdss/picasso_edp_mdnie_data.h
+diff --cc drivers/video/msm/mdss/picasso_power_save.h
+index 9daaddd,9daaddd..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/picasso_power_save.h
++++ b/drivers/video/msm/mdss/picasso_power_save.h
+diff --cc drivers/video/msm/mdss/smart_dimming.h
+index f1116b4,f1116b4..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/smart_dimming.h
++++ b/drivers/video/msm/mdss/smart_dimming.h
+diff --cc drivers/video/msm/mdss/smart_mtp_2p2_gamma.h
+index 34241e9,34241e9..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/smart_mtp_2p2_gamma.h
++++ b/drivers/video/msm/mdss/smart_mtp_2p2_gamma.h
+diff --cc drivers/video/msm/mdss/smart_mtp_s6e3.c
+index a9163ec,a9163ec..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/smart_mtp_s6e3.c
++++ b/drivers/video/msm/mdss/smart_mtp_s6e3.c
+diff --cc drivers/video/msm/mdss/smart_mtp_s6e3.h
+index 40efdbd,40efdbd..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/smart_mtp_s6e3.h
++++ b/drivers/video/msm/mdss/smart_mtp_s6e3.h
+diff --cc drivers/video/msm/mdss/smart_mtp_se6e3fa.c
+index 296b62d,296b62d..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/smart_mtp_se6e3fa.c
++++ b/drivers/video/msm/mdss/smart_mtp_se6e3fa.c
+diff --cc drivers/video/msm/mdss/smart_mtp_se6e3fa.h
+index 635902f,635902f..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/smart_mtp_se6e3fa.h
++++ b/drivers/video/msm/mdss/smart_mtp_se6e3fa.h
+diff --cc drivers/video/msm/mdss/smart_mtp_se6e8fa.c
+index 8bb33d5,8bb33d5..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/smart_mtp_se6e8fa.c
++++ b/drivers/video/msm/mdss/smart_mtp_se6e8fa.c
+diff --cc drivers/video/msm/mdss/smart_mtp_se6e8fa.h
+index 3d2b4a9,3d2b4a9..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/smart_mtp_se6e8fa.h
++++ b/drivers/video/msm/mdss/smart_mtp_se6e8fa.h
+diff --cc drivers/video/msm/mdss/v1_edp_mdnie_data.h
+index 8bca091,8bca091..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/v1_edp_mdnie_data.h
++++ b/drivers/video/msm/mdss/v1_edp_mdnie_data.h
+diff --cc drivers/video/msm/mdss/v1_power_save.h
+index 60f2b08,60f2b08..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/v1_power_save.h
++++ b/drivers/video/msm/mdss/v1_power_save.h
+diff --cc drivers/video/msm/mdss/xlog.c
+index 6349e09,6349e09..0000000
+mode 100755,100644..100644
+--- a/drivers/video/msm/mdss/xlog.c
++++ b/drivers/video/msm/mdss/xlog.c
+diff --cc drivers/video/msm/mhl_v2/sii8240/sii8240_platform.c
+index d1b5394,9c22dc0..0000000
+--- a/drivers/video/msm/mhl_v2/sii8240/sii8240_platform.c
++++ b/drivers/video/msm/mhl_v2/sii8240/sii8240_platform.c
+diff --cc drivers/w1/Kconfig
+index 3f9afa6,fd2c7bd..0000000
+--- a/drivers/w1/Kconfig
++++ b/drivers/w1/Kconfig
+diff --cc drivers/w1/masters/w1-gpio-msm.c
+index 0a89810,945445f..0000000
+--- a/drivers/w1/masters/w1-gpio-msm.c
++++ b/drivers/w1/masters/w1-gpio-msm.c
+diff --cc drivers/w1/slaves/w1_ds28el15.c
+index d0da836,8925495..0000000
+--- a/drivers/w1/slaves/w1_ds28el15.c
++++ b/drivers/w1/slaves/w1_ds28el15.c
+diff --cc drivers/w1/w1.c
+index 3b508b9,d184889..0000000
+--- a/drivers/w1/w1.c
++++ b/drivers/w1/w1.c
+diff --cc drivers/w1/w1.h
+index c900c24,4d012ca..0000000
+--- a/drivers/w1/w1.h
++++ b/drivers/w1/w1.h
+diff --cc drivers/w1/w1_int.c
+index 27cca98,6828835..0000000
+--- a/drivers/w1/w1_int.c
++++ b/drivers/w1/w1_int.c
